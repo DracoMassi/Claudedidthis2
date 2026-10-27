@@ -49,3 +49,12 @@ body { margin: 0; font-family: var(--font-corps); color: var(--text); background
 [data-fiche] .legende { font-size: 22px; color: #555555; font-weight: 400; }
 [data-fiche] .piege-texte { color: var(--f-rouge-fonce); }
 [data-fiche] .fiche-pied { display: flex; justify-content: space-between; font-size: 22px; color: #666666; }
+
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--badge-bg); color: var(--accent-dark); }
+.badge.ok { background: var(--ok-bg); color: var(--ok-text); }
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; overflow: visible !important; max-width: none !important; }
+  [data-fiche] .fiche-page { margin: 0; break-after: page; }
+}

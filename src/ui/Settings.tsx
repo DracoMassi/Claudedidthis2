@@ -29,7 +29,7 @@ async function testGemini(s: S): Promise<string> {
 export default function Settings() {
   const [s, setS] = useState<S>(getSettings());
   const [msg, setMsg] = useState('');
-  const set = <K extends keyof S>(k: K, v: S[K]) => { saveSettings({ [k]: v } as Partial<S>); setS(getSettings()); };
+  const set = <K extends keyof S>(k: K, v: S[K]) => { saveSettings({ [k]: v } as Partial<S>); setS(getSettings()); window.dispatchEvent(new Event('sequentia-settings-changed')); };
   const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model', label: string, secret = false) => (
     <label style={{ display: 'block', margin: '8px 0' }}>
       {label}
