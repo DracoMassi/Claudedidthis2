@@ -29,3 +29,22 @@ body { margin: 0; font-family: var(--font-corps); color: var(--text); background
 .nav button[aria-current="page"] { background: var(--accent); color: #fff; }
 .titre { font-family: var(--font-titre); color: var(--accent-text); font-size: 32px; margin: 8px 0 12px; }
 .card { background: var(--card); border: 0.5px solid var(--card-border); border-radius: 12px; padding: 12px 14px; }
+
+/* Charte des fiches : indépendante du thème et du mode de l'app (aucune variable du thème ici). */
+[data-fiche] { --f-rouge: #DD0033; --f-rouge-fonce: #B10029; --f-rose: #CB8593; font-family: var(--font-corps); color: #000000; }
+[data-fiche] .fiche-page { background: #FFFFFF; color: #000000; padding: 64px 72px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; margin: 0 auto 24px; }
+[data-fiche] .fiche-entete { display: flex; justify-content: space-between; align-items: flex-start; }
+[data-fiche] .fiche-logo { font-family: var(--font-titre); font-style: italic; font-size: 44px; color: var(--f-rose); }
+[data-fiche] .fiche-matiere { font-weight: 700; font-size: 26px; }
+[data-fiche] .fiche-titre { font-family: var(--font-titre); font-size: 76px; line-height: 1.05; color: var(--f-rouge); text-align: center; margin: 4px 0; }
+[data-fiche] .fiche-sous-titre { font-size: 28px; color: var(--f-rouge-fonce); margin: 0; }
+[data-fiche] .fiche-corps { display: flex; flex-direction: column; gap: 22px; flex: 1; }
+[data-fiche] .bloc-titre { font-weight: 800; font-size: 54px; line-height: 1.05; color: var(--f-rouge); margin: 0 0 6px; }
+[data-fiche] .bloc { font-size: 30px; line-height: 1.4; font-weight: 600; }
+[data-fiche] .bloc p { margin: 0 0 6px; }
+[data-fiche] .bloc ol, [data-fiche] .bloc ul { margin: 4px 0; padding-left: 1.3em; }
+[data-fiche] .qcm-choix { list-style-type: upper-alpha; }
+[data-fiche] .formule { text-align: center; font-size: 38px; }
+[data-fiche] .legende { font-size: 22px; color: #555555; font-weight: 400; }
+[data-fiche] .piege-texte { color: var(--f-rouge-fonce); }
+[data-fiche] .fiche-pied { display: flex; justify-content: space-between; font-size: 22px; color: #666666; }
