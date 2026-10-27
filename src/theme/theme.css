@@ -11,8 +11,9 @@
   --ok-bg: #E3F0DC;
   --ok-text: #27500A;
   --text: #1B1B1B;
-  --font-titre: "Andaluz", "Inter", Georgia, serif;
-  --font-corps: "Inter", system-ui, -apple-system, sans-serif;
+  --font-titre: "Andaluz", "Inter Variable", Georgia, serif;
+  --font-corps: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --font-section: "Melbourne", "Inter Variable", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: var(--font-corps); color: var(--text); background: var(--page-bg); }
@@ -39,7 +40,7 @@ body { margin: 0; font-family: var(--font-corps); color: var(--text); background
 [data-fiche] .fiche-titre { font-family: var(--font-titre); font-size: 76px; line-height: 1.05; color: var(--f-rouge); text-align: center; margin: 4px 0; }
 [data-fiche] .fiche-sous-titre { font-size: 28px; color: var(--f-rouge-fonce); margin: 0; }
 [data-fiche] .fiche-corps { display: flex; flex-direction: column; gap: 22px; flex: 1; }
-[data-fiche] .bloc-titre { font-weight: 800; font-size: 54px; line-height: 1.05; color: var(--f-rouge); margin: 0 0 6px; }
+[data-fiche] .bloc-titre { font-family: var(--font-section); font-weight: 700; font-size: 54px; line-height: 1.05; color: var(--f-rouge); margin: 0 0 6px; }
 [data-fiche] .bloc { font-size: 30px; line-height: 1.4; font-weight: 600; }
 [data-fiche] .bloc p { margin: 0 0 6px; }
 [data-fiche] .bloc ol, [data-fiche] .bloc ul { margin: 4px 0; padding-left: 1.3em; }
