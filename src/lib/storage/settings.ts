@@ -1,7 +1,4 @@
-// ThemeId, Mode et Tokens sont précisés en tâche 4 bis ; alias larges en attendant.
-export type ThemeId = string;
-export type Mode = string;
-export type Tokens = Record<string, string>;
+import type { Mode, ThemeId, Tokens } from '../../theme/themes';
 
 export type Settings = {
   geminiKey: string; githubToken: string; owner: string; repo: string; model: string;

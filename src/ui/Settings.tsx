@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ThemeSettings from './ThemeSettings';
 import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
 
 async function testGithub(s: S): Promise<string> {
@@ -44,6 +45,7 @@ export default function Settings() {
     </label>
   );
   return (
+    <>
     <div className="card">
       {text('geminiKey', 'Clé Gemini', true)}
       {text('githubToken', 'Jeton GitHub (limité au dépôt Fiches)', true)}
@@ -60,5 +62,7 @@ export default function Settings() {
       </div>
       {msg && <p role="status">{msg}</p>}
     </div>
+    <ThemeSettings />
+    </>
   );
 }
