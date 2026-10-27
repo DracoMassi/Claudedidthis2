@@ -1,0 +1,31 @@
+:root {
+  --page-bg: #F8E8EC;
+  --grid-line: #EFCDD5;
+  --card: #FFFFFF;
+  --card-border: #E4B9C2;
+  --accent: #DD0033;
+  --accent-text: #DD0033;
+  --accent-dark: #7C011D;
+  --logo: #A8586B;
+  --badge-bg: #F3D9DF;
+  --ok-bg: #E3F0DC;
+  --ok-text: #27500A;
+  --text: #1B1B1B;
+  --font-titre: "Andaluz", "Inter", Georgia, serif;
+  --font-corps: "Inter", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-corps); color: var(--text); background: var(--page-bg); }
+.app { min-height: 100vh; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+.app.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.logo { font-family: var(--font-titre); font-style: italic; color: var(--logo); font-size: 22px; padding: 14px 0 6px; }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 12px; }
+.nav button { border: 0; border-radius: 999px; padding: 6px 12px; font-size: 14px; background: transparent; color: var(--accent-dark); cursor: pointer; }
+.nav button[aria-current="page"] { background: var(--accent); color: #fff; }
+.titre { font-family: var(--font-titre); color: var(--accent-text); font-size: 32px; margin: 8px 0 12px; }
+.card { background: var(--card); border: 0.5px solid var(--card-border); border-radius: 12px; padding: 12px 14px; }
