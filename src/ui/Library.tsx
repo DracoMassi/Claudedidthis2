@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { printPages } from '../lib/export/pdf';
+import { exportPng, isLikelyBlank } from '../lib/export/png';
 import type { GithubRepo } from '../lib/github/repo';
 import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
 import { renderFiche } from '../lib/render/renderFiche';
@@ -68,6 +69,22 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
         <div className="card" style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             {fiche && <button onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</button>}
+            {fiche && (
+              <button onClick={async () => {
+                const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+                try {
+                  const blobs = await exportPng(pages);
+                  if (blobs.some(isLikelyBlank)) { setMsg("L'image semble vide. Utilise l'export PDF"); return; }
+                  blobs.forEach((b, n) => {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(b);
+                    a.download = `${sel.slug}-${n + 1}.png`;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+                  });
+                } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); }
+              }}>Exporter en PNG</button>
+            )}
             {onEdit && sel.kind === 'fiche' && <button onClick={() => onEdit(sel.path)}>Modifier</button>}
             {fiche && <button disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
             {fiche && (
