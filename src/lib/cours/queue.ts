@@ -52,6 +52,10 @@ export class ImportQueue {
     const st = await this.load(id);
     return { done: st.next, total: st.lots.length };
   }
+  async lots(id: string): Promise<Lot[]> {
+    const st = await this.load(id);
+    return st.lots.map((l) => ({ index: l.index, fromPage: l.fromPage, toPage: l.toPage, mime: l.mime, data: fromBase64(l.b64) }));
+  }
   async markdown(id: string): Promise<string> {
     const st = await this.load(id);
     return st.results.slice(0, st.next).join('\n\n');
