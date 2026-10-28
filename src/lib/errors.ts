@@ -1,0 +1,20 @@
+export class RateLimitError extends Error {
+  retryAfterSec: number;
+  constructor(retryAfterSec: number) {
+    super(`Quota atteint, réessayer dans ${retryAfterSec} s`);
+    this.name = 'RateLimitError';
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+export class AuthError extends Error {
+  constructor(message = 'Clé ou jeton refusé') { super(message); this.name = 'AuthError'; }
+}
+export class NetworkError extends Error {
+  constructor(message = 'Pas de réponse du réseau') { super(message); this.name = 'NetworkError'; }
+}
+export class ConflictError extends Error {
+  constructor(message = 'Le fichier a changé ailleurs') { super(message); this.name = 'ConflictError'; }
+}
+export class NotFoundError extends Error {
+  constructor(message = 'Fichier introuvable') { super(message); this.name = 'NotFoundError'; }
+}

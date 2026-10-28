@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.1",
+  "meta": { "titre": "Fiche de test v1.1", "matiere": "maths", "niveau": "mpsi", "chapitre": "Test", "statut": "verifie",
+            "format": "fiche", "exemple": true,
+            "brief": { "id": "test", "matiere": "maths", "niveau": "mpsi", "chapitre": "Test", "sujet": "Test" } },
+  "pages": [ { "blocks": [
+    { "type": "proprietes", "titre": "Propriétés", "items": [
+      { "nom": "Linéarité", "enonce": "$\\int (f+g) = \\int f + \\int g$" },
+      { "nom": "Positivité", "enonce": "Si $a \\le b$ et $f \\ge 0$, alors $\\int_a^b f \\ge 0$." } ] },
+    { "type": "figure", "svg": "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><circle cx='5' cy='5' r='4'/></svg>", "legende": "Un disque" }
+  ] } ]
+}

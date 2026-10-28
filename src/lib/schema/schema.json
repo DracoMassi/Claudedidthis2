@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fiche Séquentia",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "meta",
+    "pages"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "titre",
+        "matiere",
+        "niveau",
+        "chapitre",
+        "statut"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "titre": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "matiere": {
+          "enum": [
+            "maths",
+            "physique",
+            "chimie",
+            "si",
+            "philosophie",
+            "histoire"
+          ]
+        },
+        "niveau": {
+          "enum": [
+            "terminale",
+            "mpsi"
+          ]
+        },
+        "chapitre": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "statut": {
+          "enum": [
+            "a_verifier",
+            "verifie"
+          ]
+        },
+        "format": {
+          "enum": [
+            "fiche",
+            "post"
+          ]
+        },
+        "exemple": {
+          "type": "boolean"
+        },
+        "brief": {
+          "type": "object"
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": [
+          "blocks"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "titre_page": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/block"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "str": {
+      "type": "string",
+      "minLength": 1
+    },
+    "strs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "block": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/b_definition"
+        },
+        {
+          "$ref": "#/$defs/b_theoreme"
+        },
+        {
+          "$ref": "#/$defs/b_demonstration"
+        },
+        {
+          "$ref": "#/$defs/b_methode"
+        },
+        {
+          "$ref": "#/$defs/b_formule"
+        },
+        {
+          "$ref": "#/$defs/b_piege"
+        },
+        {
+          "$ref": "#/$defs/b_exemple"
+        },
+        {
+          "$ref": "#/$defs/b_qcm"
+        },
+        {
+          "$ref": "#/$defs/b_proprietes"
+        },
+        {
+          "$ref": "#/$defs/b_figure"
+        }
+      ]
+    },
+    "b_definition": {
+      "type": "object",
+      "required": [
+        "type",
+        "terme",
+        "enonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "definition"
+        },
+        "terme": {
+          "$ref": "#/$defs/str"
+        },
+        "enonce": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "b_theoreme": {
+      "type": "object",
+      "required": [
+        "type",
+        "nom",
+        "enonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "theoreme"
+        },
+        "nom": {
+          "$ref": "#/$defs/str"
+        },
+        "hypotheses": {
+          "$ref": "#/$defs/strs"
+        },
+        "enonce": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "b_demonstration": {
+      "type": "object",
+      "required": [
+        "type",
+        "titre",
+        "etapes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "demonstration"
+        },
+        "titre": {
+          "$ref": "#/$defs/str"
+        },
+        "etapes": {
+          "$ref": "#/$defs/strs"
+        }
+      }
+    },
+    "b_methode": {
+      "type": "object",
+      "required": [
+        "type",
+        "titre",
+        "etapes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "methode"
+        },
+        "titre": {
+          "$ref": "#/$defs/str"
+        },
+        "etapes": {
+          "$ref": "#/$defs/strs"
+        }
+      }
+    },
+    "b_formule": {
+      "type": "object",
+      "required": [
+        "type",
+        "latex"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "formule"
+        },
+        "latex": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^$]+$"
+        },
+        "legende": {
+          "type": "string"
+        }
+      }
+    },
+    "b_piege": {
+      "type": "object",
+      "required": [
+        "type",
+        "texte",
+        "correction"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "piege"
+        },
+        "texte": {
+          "$ref": "#/$defs/str"
+        },
+        "correction": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "b_exemple": {
+      "type": "object",
+      "required": [
+        "type",
+        "enonce",
+        "solution"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "exemple"
+        },
+        "enonce": {
+          "$ref": "#/$defs/str"
+        },
+        "solution": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "b_qcm": {
+      "type": "object",
+      "required": [
+        "type",
+        "question",
+        "choix",
+        "reponse",
+        "explication"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "qcm"
+        },
+        "question": {
+          "$ref": "#/$defs/str"
+        },
+        "choix": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5,
+          "items": {
+            "type": "string"
+          }
+        },
+        "reponse": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "explication": {
+          "$ref": "#/$defs/str"
+        }
+      }
+    },
+    "b_proprietes": {
+      "type": "object",
+      "required": [
+        "type",
+        "titre",
+        "items"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "proprietes"
+        },
+        "titre": {
+          "$ref": "#/$defs/str"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "nom",
+              "enonce"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "nom": {
+                "$ref": "#/$defs/str"
+              },
+              "enonce": {
+                "$ref": "#/$defs/str"
+              }
+            }
+          }
+        }
+      }
+    },
+    "b_figure": {
+      "type": "object",
+      "required": [
+        "type",
+        "svg"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "figure"
+        },
+        "svg": {
+          "$ref": "#/$defs/str"
+        },
+        "legende": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$id": "https://sequentia.local/fiche.schema.json"
+}

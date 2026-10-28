@@ -1,0 +1,67 @@
+:root {
+  --page-bg: #F8E8EC;
+  --grid-line: #EFCDD5;
+  --card: #FFFFFF;
+  --card-border: #E4B9C2;
+  --accent: #DD0033;
+  --accent-text: #DD0033;
+  --accent-dark: #7C011D;
+  --logo: #A8586B;
+  --badge-bg: #F3D9DF;
+  --ok-bg: #E3F0DC;
+  --ok-text: #27500A;
+  --text: #1B1B1B;
+  --font-titre: "Andaluz", "Inter Variable", Georgia, serif;
+  --font-corps: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --font-section: "Melbourne", "Inter Variable", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--font-corps); color: var(--text); background: var(--page-bg); }
+.app { min-height: 100vh; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+.app.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.logo { font-family: var(--font-titre); font-style: italic; color: var(--logo); font-size: 22px; padding: 14px 0 6px; }
+.nav { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 12px; }
+.nav button { border: 0; border-radius: 999px; padding: 6px 12px; font-size: 14px; background: transparent; color: var(--accent-dark); cursor: pointer; }
+.nav button[aria-current="page"] { background: var(--accent); color: #fff; }
+.titre { font-family: var(--font-titre); color: var(--accent-text); font-size: 32px; margin: 8px 0 12px; }
+.card { background: var(--card); border: 0.5px solid var(--card-border); border-radius: 12px; padding: 12px 14px; }
+
+/* Charte des fiches : indépendante du thème et du mode de l'app (aucune variable du thème ici). */
+[data-fiche] { --f-rouge: #DD0033; --f-rouge-fonce: #B10029; --f-rose: #CB8593; font-family: var(--font-corps); color: #000000; }
+[data-fiche] .fiche-page { background: #FFFFFF; color: #000000; padding: 64px 72px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; margin: 0 auto 24px; }
+[data-fiche] .fiche-entete { display: flex; justify-content: space-between; align-items: flex-start; }
+[data-fiche] .fiche-logo { font-family: var(--font-titre); font-style: italic; font-size: 44px; color: var(--f-rose); }
+[data-fiche] .fiche-matiere { font-weight: 700; font-size: 26px; }
+[data-fiche] .fiche-titre { font-family: var(--font-titre); font-size: 76px; line-height: 1.05; color: var(--f-rouge); text-align: center; margin: 4px 0; }
+[data-fiche] .fiche-sous-titre { font-size: 28px; color: var(--f-rouge-fonce); margin: 0; }
+[data-fiche] .fiche-corps { display: flex; flex-direction: column; gap: 22px; flex: 1; }
+[data-fiche] .bloc-titre { font-family: var(--font-section); font-weight: 700; font-size: 54px; line-height: 1.05; color: var(--f-rouge); margin: 0 0 6px; }
+[data-fiche] .bloc { font-size: 30px; line-height: 1.4; font-weight: 600; }
+[data-fiche] .bloc p { margin: 0 0 6px; }
+[data-fiche] .bloc ol, [data-fiche] .bloc ul { margin: 4px 0; padding-left: 1.3em; }
+[data-fiche] .qcm-choix { list-style-type: upper-alpha; }
+[data-fiche] .formule { text-align: center; font-size: 38px; }
+[data-fiche] .legende { font-size: 22px; color: #555555; font-weight: 400; }
+[data-fiche] .piege-texte { color: var(--f-rouge-fonce); }
+[data-fiche] .fiche-pied { display: flex; justify-content: space-between; font-size: 22px; color: #666666; }
+
+.badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--badge-bg); color: var(--accent-dark); }
+.badge.ok { background: var(--ok-bg); color: var(--ok-text); }
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; left: 0; top: 0; overflow: visible !important; max-width: none !important; }
+  [data-fiche] .fiche-page { margin: 0; break-after: page; }
+}
+
+.review .pane.hidden { display: none; }
+@media (min-width: 900px) {
+  .review { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start; }
+  .review .pane.hidden { display: block; }
+  .tabs-review { display: none !important; }
+}

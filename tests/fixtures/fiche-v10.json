@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "meta": { "titre": "Fiche de test v1.0", "matiere": "maths", "niveau": "mpsi", "chapitre": "Test", "statut": "a_verifier" },
+  "pages": [ { "titre_page": "Page 1", "blocks": [
+    { "type": "definition", "terme": "Primitive", "enonce": "Soit $f : I \\to \\R$ ; $F$ est une primitive de $f$ si $F' = f$." },
+    { "type": "theoreme", "nom": "Théorème fondamental", "hypotheses": ["$f$ continue sur $[a,b]$"], "enonce": "$\\int_a^b f(x)\\dd x = F(b) - F(a)$." },
+    { "type": "demonstration", "titre": "Récurrence", "etapes": ["Initialisation.", "Hérédité.", "Conclusion."] },
+    { "type": "methode", "titre": "Étudier une limite", "etapes": ["Factoriser.", "Conclure."] },
+    { "type": "formule", "latex": "\\e^{\\i\\pi} + 1 = 0", "legende": "Identité d'Euler" },
+    { "type": "piege", "texte": "Oublier l'hypothèse $a \\le b$.", "correction": "La préciser dans chaque énoncé." },
+    { "type": "exemple", "enonce": "Calculer $\\int_0^1 x\\dd x$.", "solution": "$\\frac{1}{2}$." },
+    { "type": "qcm", "question": "Que vaut $\\abs{-2}$ ?", "choix": ["$2$", "$-2$"], "reponse": 0, "explication": "Par définition." }
+  ] } ]
+}
