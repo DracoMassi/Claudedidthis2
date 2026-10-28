@@ -54,10 +54,10 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
         </select>
       </div>
       {msg && <p role="alert">{msg}</p>}
-      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 8 }}>
+      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
         {shown.map((i) => (
-          <li key={i.path} className="card">
-            <button onClick={() => open(i)} style={{ all: 'unset', cursor: 'pointer' }}>
+          <li key={i.path} className="card lift">
+            <button onClick={() => open(i)} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
               <b>{i.slug}</b> · {i.matiere} · {i.kind === 'cours' ? 'cours' : 'fiche'}
               {i.statut === 'verifie' && <span className="badge ok"> validée</span>}
             </button>
@@ -68,9 +68,9 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
       {sel && (
         <div className="card" style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {fiche && <button onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</button>}
+            {fiche && <button className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</button>}
             {fiche && (
-              <button onClick={async () => {
+              <button className="btn ghost" onClick={async () => {
                 const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
                 try {
                   const blobs = await exportPng(pages);
@@ -85,16 +85,16 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
                 } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); }
               }}>Exporter en PNG</button>
             )}
-            {onEdit && sel.kind === 'fiche' && <button onClick={() => onEdit(sel.path)}>Modifier</button>}
-            {fiche && <button disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
+            {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
+            {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
             {fiche && (
-              <button onClick={async () => {
+              <button className="btn ghost" onClick={async () => {
                 try { await setExemple(repo, sel.path, !fiche.meta.exemple); setFiche({ ...fiche, meta: { ...fiche.meta, exemple: !fiche.meta.exemple } }); }
                 catch { setMsg("Impossible d'enregistrer. Réessayer"); }
               }}>{fiche.meta.exemple ? 'Retirer des exemples' : 'Marquer comme exemple de style'}</button>
             )}
           </div>
-          {fiche && <div className="print-area" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
+          {fiche && <div className="print-area export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
           {cours && <pre style={{ whiteSpace: 'pre-wrap' }}>{cours}</pre>}
         </div>
       )}
