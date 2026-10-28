@@ -14,18 +14,15 @@ async function retryAfterSec(r: Response): Promise<number> {
   return 30;
 }
 
-export async function callGemini(o: { key: string; model: string; system: string; messages: Msg[]; fetchImpl?: typeof fetch }): Promise<string> {
+/** Envoie un corps `generateContent` à Gemini et renvoie le texte ; traduit les échecs en erreurs typées. */
+export async function postGemini(o: { key: string; model: string; body: unknown; fetchImpl?: typeof fetch }): Promise<string> {
   const f = o.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   let r: Response;
   try {
     r = await f(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(o.model)}:generateContent?key=${encodeURIComponent(o.key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: o.system }] },
-        contents: o.messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
-      }),
+      body: JSON.stringify(o.body),
     });
   } catch {
     // Une erreur CORS peut masquer un 503 : on ne dit jamais « clé invalide » ici.
@@ -39,4 +36,15 @@ export async function callGemini(o: { key: string; model: string; system: string
   const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
   if (!text) throw new NetworkError('Réponse vide de Gemini');
   return text;
+}
+
+export function callGemini(o: { key: string; model: string; system: string; messages: Msg[]; fetchImpl?: typeof fetch }): Promise<string> {
+  return postGemini({
+    key: o.key, model: o.model, fetchImpl: o.fetchImpl,
+    body: {
+      systemInstruction: { parts: [{ text: o.system }] },
+      contents: o.messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+    },
+  });
 }
