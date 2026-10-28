@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { callGemini } from '../lib/gemini/client';
 import { RequestBudget } from '../lib/gemini/budget';
 import { buildPrompt } from '../lib/generate/context';
 import { generateFiche } from '../lib/generate/loop';
 import { loadSources } from '../lib/generate/sources';
 import type { GithubRepo } from '../lib/github/repo';
-import { AuthError, RateLimitError } from '../lib/errors';
-import { checkOverflow, renderFiche } from '../lib/render/renderFiche';
+import { AuthError } from '../lib/errors';
 import schema from '../lib/schema/schema.json';
-import { lintLatex } from '../lib/schema/lint';
-import { validateFiche } from '../lib/schema/validate';
 import { slugify } from '../lib/slug';
 import { exportDraft, type Db, type Draft } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
 import type { Brief, Fiche, Problem } from '../lib/types';
+import { makeGenerateDeps } from './geminiDeps';
 import { messageFor } from './messages';
 
 type Props = { repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void };
@@ -32,16 +29,6 @@ const fromBrief = (b: Brief): Form => ({
   contenu: (b.contenu_obligatoire ?? []).join('\n'), pieges: (b.pieges ?? []).join('\n'), exemples: (b.exemples ?? []).join('\n'),
   nbQcm: b.nb_qcm ?? 2, exclure: (b.exclure ?? []).join('\n'), consignes: b.consignes ?? '',
 });
-
-function renderOffscreen(f: Fiche) {
-  const host = document.createElement('div');
-  host.style.cssText = 'position:absolute;left:-99999px;top:0';
-  document.body.appendChild(host);
-  try {
-    const { katexErrors } = renderFiche(host, f);
-    return { katexErrors, overflow: checkOverflow(host) };
-  } finally { host.remove(); }
-}
 
 export function downloadText(name: string, text: string): void {
   const a = document.createElement('a');
@@ -90,17 +77,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
       try { src = await loadSources(repo, db, brief); }
       catch (e) { setMsg(messageFor(e, { source: 'github' })); return; }
       const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief });
-      const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
-      let n = 0;
-      const result = await generateFiche(brief, prompt, {
-        llm: async (messages) => {
-          if (!budget.canSend()) throw new RateLimitError(budget.waitSeconds());
-          budget.record();
-          setTour(++n);
-          return callGemini({ key: s.geminiKey, model: s.model, system: prompt.system, messages });
-        },
-        validate: validateFiche, lint: lintLatex, render: renderOffscreen,
-      });
+      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour));
       const fiche: Fiche | null = result.fiche
         ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
         : null;

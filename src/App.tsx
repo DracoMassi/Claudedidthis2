@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Generate from './ui/Generate';
 import Library from './ui/Library';
+import Review from './ui/Review';
 import type { Brief } from './lib/types';
 import type { Draft } from './lib/storage/db';
 import Settings from './ui/Settings';
@@ -14,7 +15,8 @@ export default function App() {
   const repo = useRepo();
   const db = useDb();
   const [redo, setRedo] = useState<Brief | null>(null);
-  const [, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [editPath, setEditPath] = useState<string | null>(null);
   const quadrille = entree !== 'Relire';
   return (
     <div className={`app${quadrille ? ' grid-bg' : ''}`}>
@@ -27,7 +29,7 @@ export default function App() {
         ))}
       </nav>
       <h1 className="titre">{entree}</h1>
-      {entree === 'Réglages' ? <Settings /> : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} onOpenDraft={(d) => { setDraft(d); setEntree('Relire'); }} /> : entree === 'Bibliothèque' ? <Library repo={repo} db={db} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} /> : <div className="card">Écran « {entree} » : à venir.</div>}
+      {entree === 'Réglages' ? <Settings /> : entree === 'Relire' ? <Review repo={repo} db={db} draft={draft} path={editPath} /> : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} onOpenDraft={(d) => { setDraft(d); setEditPath(null); setEntree('Relire'); }} /> : entree === 'Bibliothèque' ? <Library repo={repo} db={db} onEdit={(p) => { setEditPath(p); setDraft(null); setEntree('Relire'); }} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} /> : <div className="card">Écran « {entree} » : à venir.</div>}
     </div>
   );
 }

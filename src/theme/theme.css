@@ -58,3 +58,10 @@ body { margin: 0; font-family: var(--font-corps); color: var(--text); background
   .print-area { position: absolute; left: 0; top: 0; overflow: visible !important; max-width: none !important; }
   [data-fiche] .fiche-page { margin: 0; break-after: page; }
 }
+
+.review .pane.hidden { display: none; }
+@media (min-width: 900px) {
+  .review { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); gap: 12px; align-items: start; }
+  .review .pane.hidden { display: block; }
+  .tabs-review { display: none !important; }
+}
