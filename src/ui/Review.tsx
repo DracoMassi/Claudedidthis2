@@ -123,7 +123,7 @@ export default function Review({ repo, db, draft, path }: Props) {
             <p>Le dernier essai n'a pas produit de fiche valide. Corrige le JSON ci-dessous puis applique-le.</p>
             {draft.problems.length > 0 && <ul>{draft.problems.map((p, i) => <li key={i}>{p.code} : {p.message}</li>)}</ul>}
             <textarea style={{ width: '100%', padding: 8 }} rows={14} value={raw} onChange={(e) => setRaw(e.target.value)} />
-            <button onClick={() => appliquerRaw(raw)}>Appliquer le JSON</button>
+            <button className="btn" onClick={() => appliquerRaw(raw)}>Appliquer le JSON</button>
             {rawMsg && <p role="alert">{rawMsg}</p>}
           </>
         )}
@@ -135,8 +135,8 @@ export default function Review({ repo, db, draft, path }: Props) {
   return (
     <div>
       <div className="tabs-review" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <button aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>Édition</button>
-        <button aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>Aperçu</button>
+        <button className="btn ghost" aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>Édition</button>
+        <button className="btn ghost" aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>Aperçu</button>
       </div>
       <div className="card" style={{ marginBottom: 8 }}>
         Contrôles : schéma {etat(checks.schema.length === 0)} · lint {etat(checks.lint.length === 0)} · KaTeX {etat(checks.katex.length === 0)} · débordement {etat(checks.overflow.length === 0)}{checks.overflow.length > 0 && ` (pages ${checks.overflow.join(', ')})`}
@@ -165,7 +165,7 @@ export default function Review({ repo, db, draft, path }: Props) {
           </details>
         </div>
         <div className={`pane${tab === 'preview' ? '' : ' hidden'}`}>
-          <div ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />
+          <div className="export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />
         </div>
       </div>
       <div className="card" style={{ marginTop: 8 }}>
@@ -177,8 +177,8 @@ export default function Review({ repo, db, draft, path }: Props) {
         ))}
         <textarea placeholder="Consigne pour Gemini (par exemple : découpe la page 3)" style={{ width: '100%', padding: 8, marginTop: 8 }} rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <button disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
-          <button disabled={!peutValider || busy} onClick={() => void valider()} style={{ background: 'var(--accent)', color: '#fff', border: 0, borderRadius: 8, padding: '6px 14px' }}>Valider</button>
+          <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
+          <button className="btn" disabled={!peutValider || busy} onClick={() => void valider()}>Valider</button>
         </div>
         {!peutValider && <p style={{ fontSize: 13 }}>Valider s'active quand toutes les cases sont cochées et que schéma, lint et KaTeX sont au vert.</p>}
         {msg && <p role="status">{msg}</p>}
@@ -190,7 +190,7 @@ export default function Review({ repo, db, draft, path }: Props) {
             <div><b>Version distante</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{conflict}</pre></div>
             <div><b>Ma version</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{JSON.stringify(fiche, null, 2)}</pre></div>
           </div>
-          <button onClick={() => void valider(true)}>Écraser</button> <button onClick={() => setConflict(null)}>Annuler</button>
+          <button className="btn" onClick={() => void valider(true)}>Écraser</button> <button className="btn ghost" onClick={() => setConflict(null)}>Annuler</button>
         </div>
       )}
     </div>
