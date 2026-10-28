@@ -1,0 +1,81 @@
+/* Séquentia — DA inspirée d'Apple : clarté, déférence au contenu, ombres très douces,
+   typographie dominante, mouvement discret. Chargée APRÈS theme.css.
+   Aucune couleur en dur côté app : tout dérive des variables du thème (--card, --accent,
+   --page-bg…), donc les préréglages, le mode Auto/Clair/Sombre et les couleurs perso marchent. */
+
+:root {
+  --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, .04);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, .08);
+  --sep: rgba(0, 0, 0, .08);
+  --r-card: 24px;
+  --r-field: 12px;
+  --r-pill: 980px;
+  --focus: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+:root[data-mode="dark"] { --sep: rgba(255, 255, 255, .08); --shadow-sm: none; --shadow-md: none; }
+
+/* Typographie : corps 17px, interlettrage serré */
+.app { max-width: 1200px; margin: 0 auto; padding-left: 22px; padding-right: 22px;
+  font-size: 17px; line-height: 1.47; letter-spacing: -0.022em; -webkit-font-smoothing: antialiased; }
+@media (min-width: 768px) { .app { padding-left: 40px; padding-right: 40px; } }
+p { text-wrap: pretty; }
+small, .badge { letter-spacing: -0.01em; }
+
+.logo { font-size: 24px; padding: 18px 0 4px; }
+.titre { font-size: clamp(36px, 6vw, 56px); font-weight: 400; line-height: 1.07; letter-spacing: -0.03em;
+  margin: 28px 0 24px; text-wrap: balance; }
+h3 { font-family: var(--font-section); font-weight: 600; letter-spacing: -0.02em; line-height: 1.14; }
+
+/* Navigation : 44px, sticky, translucide */
+.nav {
+  position: sticky; top: 0; z-index: 20; align-items: center; gap: 2px; flex-wrap: nowrap; overflow-x: auto;
+  height: 44px; margin: 0 -22px; padding: 0 18px;
+  background: color-mix(in srgb, var(--page-bg) 72%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--sep);
+}
+@media (min-width: 768px) { .nav { margin: 0 -40px; padding: 0 36px; } }
+.nav button { padding: 6px 14px; font-size: 14px; font-weight: 400; letter-spacing: -0.016em; white-space: nowrap;
+  transition: background .2s var(--ease-apple), color .2s var(--ease-apple); }
+.nav button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.nav button[aria-current="page"] { font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); }
+
+/* Cartes : sans bordure, ombre quasi invisible (en sombre : bordure fine, pas d'ombre) */
+.card { border: 0; border-radius: var(--r-card); padding: 20px 24px; box-shadow: var(--shadow-sm); }
+:root[data-mode="dark"] .card { border: 1px solid var(--sep); }
+.lift { transition: transform .25s var(--ease-apple), box-shadow .25s var(--ease-apple); }
+.lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+
+/* Boutons : secondaire par défaut (teinte douce) ; .btn = primaire plein */
+button:not(.nav button) {
+  font: inherit; font-size: 15px; font-weight: 400; letter-spacing: -0.016em; color: var(--accent-text);
+  min-height: 44px; padding: 10px 20px; cursor: pointer; border: 0; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  transition: opacity .2s var(--ease-apple), background .2s var(--ease-apple);
+}
+button:not(.nav button):hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+button:not(.nav button):disabled { opacity: .4; cursor: not-allowed; }
+.btn, button[aria-pressed="true"]:not(.nav button) { background: var(--accent); color: #fff; font-weight: 600; }
+.btn:hover:not(:disabled), button[aria-pressed="true"]:not(.nav button):hover:not(:disabled) { background: var(--accent); opacity: .88; }
+.btn:active:not(:disabled) { opacity: .75; }
+
+/* Champs */
+input:not([type="checkbox"]):not([type="file"]), select, textarea {
+  font: inherit; font-size: 16px; letter-spacing: -0.01em; color: var(--text); min-height: 44px;
+  background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid transparent; border-radius: var(--r-field);
+  transition: border-color .2s var(--ease-apple), box-shadow .2s var(--ease-apple);
+}
+textarea { min-height: 0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+fieldset { border: 1px solid var(--sep); border-radius: 16px; }
+:focus-visible { outline: 4px solid var(--focus); outline-offset: 2px; }
+.nav button:focus-visible { outline-offset: -2px; }
+
+/* Les fiches gardent leur charte : on annule l'interlettrage et l'interligne hérités de .app */
+[data-fiche] { font-size: 16px; line-height: normal; letter-spacing: normal; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@media print { .nav { display: none !important; } .card { box-shadow: none !important; } }
