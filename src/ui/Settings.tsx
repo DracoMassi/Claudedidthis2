@@ -56,9 +56,9 @@ export default function Settings() {
       {num('maxPerDay', 'Requêtes par jour')}
       {num('lotPages', 'Pages par lot (import de cours)')}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-        <button onClick={async () => setMsg(await testGithub(s))}>Tester la connexion GitHub</button>
-        <button onClick={async () => setMsg(await testGemini(s))}>Tester la connexion Gemini</button>
-        <button onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
+        <button className="btn" onClick={async () => setMsg(await testGithub(s))}>Tester la connexion GitHub</button>
+        <button className="btn" onClick={async () => setMsg(await testGemini(s))}>Tester la connexion Gemini</button>
+        <button className="btn ghost" onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
       </div>
       {msg && <p role="status">{msg}</p>}
     </div>
