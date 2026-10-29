@@ -54,9 +54,9 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
         </select>
       </div>
       {msg && <p role="alert">{msg}</p>}
-      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
         {shown.map((i) => (
-          <li key={i.path} className="card float-card">
+          <li key={i.path} className="card lift">
             <button onClick={() => open(i)} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
               <b>{i.slug}</b> · {i.matiere} · {i.kind === 'cours' ? 'cours' : 'fiche'}
               {i.statut === 'verifie' && <span className="badge ok"> validée</span>}

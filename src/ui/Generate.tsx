@@ -111,7 +111,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
         {field('Nombre de QCM', <input style={{ display: 'block', width: 100, padding: 8 }} type="number" min={0} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />)}
         {field('À exclure (une ligne par point)', <textarea {...input} rows={2} value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />)}
         {field('Consignes', <textarea {...input} rows={2} value={f.consignes} onChange={(e) => set('consignes', e.target.value)} />)}
-        <button disabled={busy} onClick={() => void run()} style={{ padding: '8px 16px' }}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</button>
+        <button className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</button>
         <span style={{ marginLeft: 12 }}>Requêtes aujourd'hui : {used}</span>
       </div>
       {msg && <p role="status">{msg}</p>}

@@ -179,7 +179,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
           <textarea style={{ width: '100%', padding: 8 }} rows={12} value={view.md} onChange={(e) => setView({ ...view, md: e.target.value })} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
             <button disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer (à vérifier)</button>
-            <button disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</button>
+            <button className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</button>
             <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
             {conflict && <button onClick={() => void save(conflict, true)}>Écraser le cours existant</button>}
           </div>
@@ -210,7 +210,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
           <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
           <progress value={r.done} max={r.total} style={{ display: 'block', width: '100%' }} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-            <button disabled={busy || r.done >= r.total} onClick={() => void run(r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+            <button className="btn" disabled={busy || r.done >= r.total} onClick={() => void run(r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
             <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
             <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
           </div>
