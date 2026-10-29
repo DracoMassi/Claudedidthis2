@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import AsyncButton from './AsyncButton';
+import { TextField } from './Field';
 import ThemeSettings from './ThemeSettings';
 import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
 
@@ -31,18 +33,10 @@ export default function Settings() {
   const [msg, setMsg] = useState('');
   const set = <K extends keyof S>(k: K, v: S[K]) => { saveSettings({ [k]: v } as Partial<S>); setS(getSettings()); window.dispatchEvent(new Event('sequentia-settings-changed')); };
   const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model', label: string, secret = false) => (
-    <label style={{ display: 'block', margin: '8px 0' }}>
-      {label}
-      <input style={{ display: 'block', width: '100%', padding: 8 }} type={secret ? 'password' : 'text'} autoComplete="off"
-        value={s[k]} onChange={(e) => set(k, e.target.value)} />
-    </label>
+    <TextField label={label} type={secret ? 'password' : 'text'} autoComplete="off" value={s[k]} onChange={(e) => set(k, e.target.value)} />
   );
   const num = (k: 'maxPerMinute' | 'maxPerDay' | 'lotPages', label: string) => (
-    <label style={{ display: 'block', margin: '8px 0' }}>
-      {label}
-      <input style={{ display: 'block', width: 120, padding: 8 }} type="number" min={1}
-        value={s[k]} onChange={(e) => set(k, Math.max(1, Number(e.target.value) || 1))} />
-    </label>
+    <TextField label={label} type="number" min={1} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={s[k]} onChange={(e) => set(k, Math.max(1, Number(e.target.value) || 1))} />
   );
   return (
     <>
@@ -56,8 +50,8 @@ export default function Settings() {
       {num('maxPerDay', 'Requêtes par jour')}
       {num('lotPages', 'Pages par lot (import de cours)')}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-        <button className="btn" onClick={async () => setMsg(await testGithub(s))}>Tester la connexion GitHub</button>
-        <button className="btn" onClick={async () => setMsg(await testGemini(s))}>Tester la connexion Gemini</button>
+        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGithub(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion GitHub</AsyncButton>
+        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGemini(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion Gemini</AsyncButton>
         <button className="btn ghost" onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
       </div>
       {msg && <p role="status">{msg}</p>}

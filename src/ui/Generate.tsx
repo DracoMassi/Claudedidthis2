@@ -11,6 +11,8 @@ import { exportDraft, type Db, type Draft } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
 import type { Brief, Fiche, Problem } from '../lib/types';
 import { makeGenerateDeps } from './geminiDeps';
+import { TextArea, SelectField, TextField } from './Field';
+import { FxButton } from './fx';
 import { messageFor } from './messages';
 
 type Props = { repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void };
@@ -93,25 +95,24 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
     } finally { setBusy(false); }
   };
 
-  const field = (label: string, el: JSX.Element) => <label style={{ display: 'block', margin: '8px 0' }}>{label}{el}</label>;
-  const input = { style: { display: 'block', width: '100%', padding: 8 } };
+  const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
 
   return (
     <div>
       <div className="card">
         <label>Importer un brief (.json) <input type="file" accept="application/json,.json" onChange={(e) => void importBrief(e.target.files?.[0])} /></label>
-        {field('Matière', <select {...input} value={f.matiere} onChange={(e) => set('matiere', e.target.value)}>{['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'].map((m) => <option key={m}>{m}</option>)}</select>)}
-        {field('Niveau', <select {...input} value={f.niveau} onChange={(e) => set('niveau', e.target.value)}><option>mpsi</option><option>terminale</option></select>)}
-        {field('Format', <select {...input} value={f.format} onChange={(e) => set('format', e.target.value)}><option value="fiche">Fiche A4</option><option value="post">Post 4:5</option></select>)}
-        {field('Chapitre', <input {...input} value={f.chapitre} onChange={(e) => set('chapitre', e.target.value)} />)}
-        {field('Sujet', <input {...input} value={f.sujet} onChange={(e) => set('sujet', e.target.value)} />)}
-        {field('Contenu obligatoire (une ligne par point)', <textarea {...input} rows={4} value={f.contenu} onChange={(e) => set('contenu', e.target.value)} />)}
-        {field('Pièges (une ligne par point)', <textarea {...input} rows={3} value={f.pieges} onChange={(e) => set('pieges', e.target.value)} />)}
-        {field('Exemples (une ligne par point)', <textarea {...input} rows={2} value={f.exemples} onChange={(e) => set('exemples', e.target.value)} />)}
-        {field('Nombre de QCM', <input style={{ display: 'block', width: 100, padding: 8 }} type="number" min={0} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />)}
-        {field('À exclure (une ligne par point)', <textarea {...input} rows={2} value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />)}
-        {field('Consignes', <textarea {...input} rows={2} value={f.consignes} onChange={(e) => set('consignes', e.target.value)} />)}
-        <button className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</button>
+        <SelectField label="Matière" value={f.matiere} onChange={(e) => set('matiere', e.target.value)}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+        <SelectField label="Niveau" value={f.niveau} onChange={(e) => set('niveau', e.target.value)}><option>mpsi</option><option>terminale</option></SelectField>
+        <SelectField label="Format" value={f.format} onChange={(e) => set('format', e.target.value)}><option value="fiche">Fiche A4</option><option value="post">Post 4:5</option></SelectField>
+        <TextField label="Chapitre" value={f.chapitre} onChange={(e) => set('chapitre', e.target.value)} />
+        <TextField label="Sujet" value={f.sujet} onChange={(e) => set('sujet', e.target.value)} />
+        <TextArea label="Contenu obligatoire (une ligne par point)" rows={4} value={f.contenu} onChange={(e) => set('contenu', e.target.value)} />
+        <TextArea label="Pièges (une ligne par point)" rows={3} value={f.pieges} onChange={(e) => set('pieges', e.target.value)} />
+        <TextArea label="Exemples (une ligne par point)" rows={2} value={f.exemples} onChange={(e) => set('exemples', e.target.value)} />
+        <TextField label="Nombre de QCM" type="number" min={0} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />
+        <TextArea label="À exclure (une ligne par point)" rows={2} value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />
+        <TextArea label="Consignes" rows={2} value={f.consignes} onChange={(e) => set('consignes', e.target.value)} />
+        <FxButton fx="magnetic" className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</FxButton>
         <span style={{ marginLeft: 12 }}>Requêtes aujourd'hui : {used}</span>
       </div>
       {msg && <p role="status">{msg}</p>}

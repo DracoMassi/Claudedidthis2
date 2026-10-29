@@ -14,6 +14,8 @@ import { slugify } from '../lib/slug';
 import type { Db } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
 import type { Problem } from '../lib/types';
+import { TextArea, SelectField, TextField } from './Field';
+import { FxButton } from './fx';
 import { messageFor } from './messages';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -151,15 +153,15 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
     } finally { setBusy(false); }
   };
 
-  const input = { style: { display: 'block', width: '100%', padding: 8 } };
+  const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
   if (!db) return <div className="card">Chargement…</div>;
 
   if (view) {
     return (
       <div>
         <div className="card" style={{ marginBottom: 8 }}>
-          <label>Matière <select {...input} value={view.meta.matiere} onChange={(e) => setView({ ...view, meta: { ...view.meta, matiere: e.target.value } })}>{['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'].map((m) => <option key={m}>{m}</option>)}</select></label>
-          <label>Chapitre <input {...input} value={view.meta.chapitre} onChange={(e) => setView({ ...view, meta: { ...view.meta, chapitre: e.target.value } })} /></label>
+          <SelectField label="Matière" value={view.meta.matiere} onChange={(e) => setView({ ...view, meta: { ...view.meta, matiere: e.target.value } })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+          <TextField label="Chapitre" value={view.meta.chapitre} onChange={(e) => setView({ ...view, meta: { ...view.meta, chapitre: e.target.value } })} />
           <div style={{ marginTop: 8 }}>
             {problems.length === 0 ? 'Contrôles : tout est au vert' : <ul style={{ margin: 0 }}>{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul>}
           </div>
@@ -176,10 +178,10 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
           </div>
         </div>
         <div className="card" style={{ marginTop: 8 }}>
-          <textarea style={{ width: '100%', padding: 8 }} rows={12} value={view.md} onChange={(e) => setView({ ...view, md: e.target.value })} />
+          <TextArea label="Texte du cours (Markdown)" rows={12} value={view.md} onChange={(e) => setView({ ...view, md: e.target.value })} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
             <button disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer (à vérifier)</button>
-            <button className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</button>
+            <FxButton fx="shine" className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</FxButton>
             <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
             {conflict && <button onClick={() => void save(conflict, true)}>Écraser le cours existant</button>}
           </div>
@@ -193,12 +195,12 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
   return (
     <div>
       <div className="card">
-        <label>Matière <select {...input} value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'].map((m) => <option key={m}>{m}</option>)}</select></label>
-        <label>Niveau <select {...input} value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></select></label>
-        <label>Chapitre <input {...input} value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} /></label>
+        <SelectField label="Matière" value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+        <SelectField label="Niveau" value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></SelectField>
+        <TextField label="Chapitre" value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} />
         <label style={{ display: 'block', marginTop: 8 }}>Choisir dans Fichiers (PDF, images, .md, .tex, .txt) <input type="file" multiple accept="application/pdf,image/*,.md,.tex,.txt" onChange={(e) => void onFiles(e.target.files)} /></label>
         <label style={{ display: 'block', marginTop: 8 }}>Appareil photo <input type="file" accept="image/*" capture="environment" onChange={(e) => void onFiles(e.target.files)} /></label>
-        <label style={{ display: 'block', marginTop: 8 }}>Ou coller du texte <textarea {...input} rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} /></label>
+        <TextArea label="Ou coller du texte" rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} />
         <button disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
         <p>Requêtes aujourd'hui : {used}</p>
       </div>
