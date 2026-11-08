@@ -13,6 +13,8 @@ import { validateFiche } from '../lib/schema/validate';
 import type { Db, Draft } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
 import type { Block, Brief, Fiche, Problem } from '../lib/types';
+import AsyncButton from './AsyncButton';
+import { TextArea, TextField } from './Field';
 import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
 import { messageFor } from './messages';
 
@@ -20,12 +22,11 @@ type Props = { repo: GithubRepo | null; db: Db | null; draft: Draft | null; path
 type Checks = { schema: Problem[]; lint: Problem[]; katex: string[]; overflow: number[] };
 
 function FieldEditor({ label, value, onChange }: { label: string; value: unknown; onChange: (v: unknown) => void }) {
-  const box = { style: { display: 'block', width: '100%', padding: 6 } };
-  if (typeof value === 'string') return <label>{label}<textarea {...box} rows={Math.min(8, 1 + Math.floor(value.length / 60))} value={value} onChange={(e) => onChange(e.target.value)} /></label>;
-  if (typeof value === 'number') return <label>{label}<input {...box} type="number" value={value} onChange={(e) => onChange(Number(e.target.value))} /></label>;
+  if (typeof value === 'string') return <TextArea label={label} rows={Math.min(8, 1 + Math.floor(value.length / 60))} value={value} onChange={(e) => onChange(e.target.value)} />;
+  if (typeof value === 'number') return <TextField label={label} type="number" inputMode="numeric" value={value} onChange={(e) => onChange(Number(e.target.value))} />;
   if (Array.isArray(value) && value.every((x) => typeof x === 'string'))
-    return <label>{label} (une ligne par élément)<textarea {...box} rows={Math.min(8, value.length + 1)} value={value.join('\n')} onChange={(e) => onChange(e.target.value.split('\n'))} /></label>;
-  return <label>{label} (JSON)<textarea {...box} rows={5} defaultValue={JSON.stringify(value, null, 2)} onBlur={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* inchangé */ } }} /></label>;
+    return <TextArea label={`${label} (une ligne par élément)`} rows={Math.min(8, value.length + 1)} value={value.join('\n')} onChange={(e) => onChange(e.target.value.split('\n'))} />;
+  return <TextArea label={`${label} (JSON)`} rows={5} defaultValue={JSON.stringify(value, null, 2)} onBlur={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* inchangé */ } }} />;
 }
 
 export default function Review({ repo, db, draft, path }: Props) {
@@ -71,8 +72,8 @@ export default function Review({ repo, db, draft, path }: Props) {
   const bloquants = checks.schema.length + checks.lint.length + checks.katex.length;
   const peutValider = !!repo && !!fiche && canValidate(checked) && bloquants === 0;
 
-  const valider = async (force = false) => {
-    if (!repo || !fiche) return;
+  const valider = async (force = false): Promise<boolean> => {
+    if (!repo || !fiche) return false;
     setBusy(true); setMsg('');
     try {
       const saved = await validerFiche(repo, fiche, { baseSha, force });
@@ -80,11 +81,13 @@ export default function Review({ repo, db, draft, path }: Props) {
       setBaseSha((await repo.readFile(saved)).sha);
       setConflict(null);
       setMsg(`Fiche validée : ${saved}`);
+      return true;
     } catch (e) {
       if (e instanceof ConflictError) {
         try { setConflict((await repo.readFile(ficheSavePath(fiche))).content); } catch { setConflict('(version distante introuvable)'); }
         setMsg(messageFor(e));
       } else setMsg(messageFor(e, { source: 'github', offline: !navigator.onLine }));
+      return false;
     } finally { setBusy(false); }
   };
 
@@ -122,7 +125,7 @@ export default function Review({ repo, db, draft, path }: Props) {
           <>
             <p>Le dernier essai n'a pas produit de fiche valide. Corrige le JSON ci-dessous puis applique-le.</p>
             {draft.problems.length > 0 && <ul>{draft.problems.map((p, i) => <li key={i}>{p.code} : {p.message}</li>)}</ul>}
-            <textarea style={{ width: '100%', padding: 8 }} rows={14} value={raw} onChange={(e) => setRaw(e.target.value)} />
+            <TextArea label="JSON de la fiche" rows={14} value={raw} onChange={(e) => setRaw(e.target.value)} />
             <button className="btn" onClick={() => appliquerRaw(raw)}>Appliquer le JSON</button>
             {rawMsg && <p role="alert">{rawMsg}</p>}
           </>
@@ -159,7 +162,7 @@ export default function Review({ repo, db, draft, path }: Props) {
           ))}
           <details>
             <summary>JSON brut</summary>
-            <textarea style={{ width: '100%', padding: 8 }} rows={12} defaultValue={JSON.stringify(fiche, null, 2)} key={JSON.stringify(fiche).length}
+            <TextArea label="JSON brut" rows={12} defaultValue={JSON.stringify(fiche, null, 2)} key={JSON.stringify(fiche).length}
               onBlur={(e) => appliquerRaw(e.target.value)} />
             {rawMsg && <p role="alert">{rawMsg}</p>}
           </details>
@@ -175,10 +178,10 @@ export default function Review({ repo, db, draft, path }: Props) {
             <input type="checkbox" checked={checked[i] ?? false} onChange={(e) => setChecked((c) => c.map((x, k) => (k === i ? e.target.checked : x)))} /> {it}
           </label>
         ))}
-        <textarea placeholder="Consigne pour Gemini (par exemple : découpe la page 3)" style={{ width: '100%', padding: 8, marginTop: 8 }} rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+        <TextArea label="Consigne pour Gemini (par exemple : découpe la page 3)" rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
-          <button className="btn" disabled={!peutValider || busy} onClick={() => void valider()}>Valider</button>
+          <AsyncButton className="btn" fx="shine" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider</AsyncButton>
         </div>
         {!peutValider && <p style={{ fontSize: 13 }}>Valider s'active quand toutes les cases sont cochées et que schéma, lint et KaTeX sont au vert.</p>}
         {msg && <p role="status">{msg}</p>}

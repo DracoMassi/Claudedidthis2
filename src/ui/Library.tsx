@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncButton from './AsyncButton';
+import { SelectField, TextField } from './Field';
+import { FxButton } from './fx';
 import { printPages } from '../lib/export/pdf';
 import { exportPng, isLikelyBlank } from '../lib/export/png';
 import type { GithubRepo } from '../lib/github/repo';
@@ -42,16 +45,33 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
 
   useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
 
+  const exporterPng = async (): Promise<boolean> => {
+    if (!sel) return false;
+    const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+    try {
+      const blobs = await exportPng(pages);
+      if (blobs.some(isLikelyBlank)) { setMsg("L'image semble vide. Utilise l'export PDF"); return false; }
+      blobs.forEach((b, n) => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = `${sel.slug}-${n + 1}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      });
+      return true;
+    } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); return false; }
+  };
+
   if (!repo) return <div className="card">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</div>;
 
   return (
     <div>
       <div className="card" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input placeholder="Rechercher" value={text} onChange={(e) => setText(e.target.value)} style={{ padding: 8 }} />
-        <select value={matiere} onChange={(e) => setMatiere(e.target.value)} style={{ padding: 8 }}>
+        <TextField label="Rechercher" value={text} onChange={(e) => setText(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 240px' }} />
+        <SelectField label="Matière" value={matiere} onChange={(e) => setMatiere(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 200px' }}>
           <option value="">Toutes les matières</option>
           {matieres.map((m) => <option key={m}>{m}</option>)}
-        </select>
+        </SelectField>
       </div>
       {msg && <p role="alert">{msg}</p>}
       <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
@@ -68,23 +88,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
       {sel && (
         <div className="card" style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {fiche && <button className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</button>}
-            {fiche && (
-              <button className="btn ghost" onClick={async () => {
-                const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
-                try {
-                  const blobs = await exportPng(pages);
-                  if (blobs.some(isLikelyBlank)) { setMsg("L'image semble vide. Utilise l'export PDF"); return; }
-                  blobs.forEach((b, n) => {
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(b);
-                    a.download = `${sel.slug}-${n + 1}.png`;
-                    a.click();
-                    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-                  });
-                } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); }
-              }}>Exporter en PNG</button>
-            )}
+            {fiche && <FxButton fx="spotlight" className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</FxButton>}
+            {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
             {fiche && (
