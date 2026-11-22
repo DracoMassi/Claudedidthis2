@@ -5,6 +5,7 @@ import { printPages } from '../lib/export/pdf';
 import { exportPng, isLikelyBlank } from '../lib/export/png';
 import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
 import { StatusBadge } from './status';
+import { Empty, Notice } from './kit';
 import type { GithubRepo } from '../lib/github/repo';
 import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
 import { renderFiche } from '../lib/render/renderFiche';
@@ -82,42 +83,51 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
     } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); return false; }
   };
 
-  if (!repo) return <div className="card">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</div>;
+  if (!repo) return <Empty title="Bibliothèque non connectée">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</Empty>;
 
   return (
     <div>
-      <div className="card" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <TextField label="Rechercher" value={text} onChange={(e) => setText(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 240px' }} />
-        <SelectField label="Matière" value={matiere} onChange={(e) => setMatiere(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 200px' }}>
+      <div className="card search">
+        <TextField label="Rechercher une fiche ou un cours" value={text} onChange={(e) => setText(e.target.value)} fieldStyle={{ margin: 0 }} />
+        <SelectField label="Matière" value={matiere} onChange={(e) => setMatiere(e.target.value)} fieldStyle={{ margin: 0, maxWidth: 280 }}>
           <option value="">Toutes les matières</option>
           {matieres.map((m) => <option key={m}>{m}</option>)}
         </SelectField>
       </div>
-      {msg && <p role="alert">{msg}</p>}
-      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-        {shown.map((i) => (
-          <li key={i.path} className="card lift">
-            <button onClick={() => open(i)} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
-              <b>{i.slug}</b> · {i.matiere} · {i.kind === 'cours' ? 'cours' : 'fiche'}
-              {i.statut === 'verifie' && <span className="badge ok"> validée</span>}
-            </button>
-          </li>
-        ))}
-        {shown.length === 0 && <li className="card">Aucun élément.</li>}
-      </ul>
+      {msg && <Notice kind="error">{msg}</Notice>}
+      {shown.length === 0
+        ? <Empty title={items.length === 0 ? 'Rien dans la bibliothèque pour l’instant' : 'Aucun résultat'}>{items.length === 0 ? 'Valide une fiche ou enregistre un cours : il apparaîtra ici.' : 'Essaie un autre mot, ou choisis « Toutes les matières ».'}</Empty>
+        : (
+          <ul className="libgrid">
+            {shown.map((i) => (
+              <li key={i.path}>
+                <button className="libcard" aria-pressed={sel?.path === i.path} onClick={() => open(i)}>
+                  <b>{i.slug}</b>
+                  <span className="meta">
+                    <span className="chip">{i.matiere}</span>
+                    <span className="chip">{i.kind === 'cours' ? 'Cours' : 'Fiche'}</span>
+                    {i.statut === 'verifie' && <span className="chip" data-k="ok">Validée</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       {sel && (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF (vérifié)</AsyncButton>}
-            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer (PDF vectoriel)</button>}
+        <div className="card screen" key={sel.path}>
+          <div className="h2" style={{ margin: '0 0 12px' }}>{sel.slug}</div>
+          <div className="toolbar">
+            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF</AsyncButton>}
             {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
+            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer</button>}
+            <span className="sp" />
             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
-            {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
+            {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir du brief</button>}
             {fiche && (
               <button className="btn ghost" onClick={async () => {
                 try { await setExemple(repo, sel.path, !fiche.meta.exemple); setFiche({ ...fiche, meta: { ...fiche.meta, exemple: !fiche.meta.exemple } }); }
                 catch { setMsg("Impossible d'enregistrer. Réessayer"); }
-              }}>{fiche.meta.exemple ? 'Retirer des exemples' : 'Marquer comme exemple de style'}</button>
+              }}>{fiche.meta.exemple ? 'Retirer des exemples de style' : 'Utiliser comme exemple de style'}</button>
             )}
           </div>
           {report && (
@@ -126,8 +136,9 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
               {report.problems.map((p, i) => <span key={i}>{p}</span>)}
             </div>
           )}
-          {fiche && <div className="print-area export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
-          {cours && <pre style={{ whiteSpace: 'pre-wrap' }}>{cours}</pre>}
+          {!fiche && !cours && !msg && <p className="muted">Ouverture…</p>}
+          {fiche && <div className="print-area export-root previewbox" ref={preview} />}
+          {cours && <pre className="cours-text">{cours}</pre>}
         </div>
       )}
     </div>

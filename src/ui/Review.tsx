@@ -17,8 +17,10 @@ import AsyncButton from './AsyncButton';
 import { TextArea, TextField } from './Field';
 import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
 import { messageFor } from './messages';
+import { Empty, Notice } from './kit';
+import { StatusBadge } from './status';
 
-type Props = { repo: GithubRepo | null; db: Db | null; draft: Draft | null; path: string | null };
+type Props = { repo: GithubRepo | null; db: Db | null; draft: Draft | null; path: string | null; onGoto?: (e: 'Générer' | 'Bibliothèque') => void };
 type Checks = { schema: Problem[]; lint: Problem[]; katex: string[]; overflow: number[] };
 
 function FieldEditor({ label, value, onChange }: { label: string; value: unknown; onChange: (v: unknown) => void }) {
@@ -29,7 +31,7 @@ function FieldEditor({ label, value, onChange }: { label: string; value: unknown
   return <TextArea label={`${label} (JSON)`} rows={5} defaultValue={JSON.stringify(value, null, 2)} onBlur={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* inchangé */ } }} />;
 }
 
-export default function Review({ repo, db, draft, path }: Props) {
+export default function Review({ repo, db, draft, path, onGoto }: Props) {
   const [fiche, setFiche] = useState<Fiche | null>(null);
   const [baseSha, setBaseSha] = useState<string | undefined>();
   const [items, setItems] = useState<string[]>(parseChecklist(''));
@@ -116,84 +118,109 @@ export default function Review({ repo, db, draft, path }: Props) {
     } catch { setRawMsg('JSON invalide : impossible de l’appliquer'); }
   };
 
-  if (!draft && !path) return <div className="card">Choisis un brouillon dans Générer, ou une fiche dans la Bibliothèque (Modifier).</div>;
+  if (!draft && !path) return (
+    <Empty title="Rien à relire pour l’instant" action={onGoto && <div className="toolbar"><button className="btn" onClick={() => onGoto('Générer')}>Ouvrir un brouillon</button><button className="btn ghost" onClick={() => onGoto('Bibliothèque')}>Choisir une fiche</button></div>}>
+      Choisis un brouillon dans Générer, ou une fiche de la Bibliothèque avec « Modifier ».
+    </Empty>
+  );
   if (!fiche) {
     return (
       <div className="card">
-        {msg && <p role="alert">{msg}</p>}
+        {msg && <Notice kind="error">{msg}</Notice>}
         {draft && (
           <>
             <p>Le dernier essai n'a pas produit de fiche valide. Corrige le JSON ci-dessous puis applique-le.</p>
             {draft.problems.length > 0 && <ul>{draft.problems.map((p, i) => <li key={i}>{p.code} : {p.message}</li>)}</ul>}
             <TextArea label="JSON de la fiche" rows={14} value={raw} onChange={(e) => setRaw(e.target.value)} />
             <button className="btn" onClick={() => appliquerRaw(raw)}>Appliquer le JSON</button>
-            {rawMsg && <p role="alert">{rawMsg}</p>}
+            {rawMsg && <Notice kind="error">{rawMsg}</Notice>}
           </>
         )}
       </div>
     );
   }
 
-  const etat = (ok: boolean) => (ok ? '✓' : '✗');
+  const nbCoches = checked.filter(Boolean).length;
+  const chk = (label: string, n: number) => <StatusBadge state={n === 0 ? 'ok' : 'failed'}>{label}</StatusBadge>;
+  const reste = !peutValider && !busy
+    ? bloquants > 0 ? `${bloquants} contrôle${bloquants > 1 ? 's' : ''} à corriger avant de valider.` : `Coche la checklist (${nbCoches} sur ${items.length}) pour valider.`
+    : '';
   return (
     <div>
-      <div className="tabs-review" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <div className="tabs-review" style={{ display: 'flex', marginBottom: 12 }}>
         <button className="btn ghost" aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>Édition</button>
         <button className="btn ghost" aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>Aperçu</button>
       </div>
-      <div className="card" style={{ marginBottom: 8 }}>
-        Contrôles : schéma {etat(checks.schema.length === 0)} · lint {etat(checks.lint.length === 0)} · KaTeX {etat(checks.katex.length === 0)} · débordement {etat(checks.overflow.length === 0)}{checks.overflow.length > 0 && ` (pages ${checks.overflow.join(', ')})`}
-        {[...checks.schema, ...checks.lint].map((p, i) => <div key={i} style={{ fontSize: 13 }}>{p.code} {p.path} : {p.message}</div>)}
-        {checks.katex.map((m, i) => <div key={i} style={{ fontSize: 13 }}>katex : {m}</div>)}
+      <div className="card checks" role="status" aria-label="Résultat des contrôles">
+        {chk('Schéma', checks.schema.length)}
+        {chk('LaTeX', checks.lint.length)}
+        {chk('Formules', checks.katex.length)}
+        {chk(checks.overflow.length ? `Débordement, page ${checks.overflow.join(', ')}` : 'Mise en page', checks.overflow.length)}
+        {[...checks.schema, ...checks.lint].map((p, i) => <div key={i} className="detail">{p.path ? `${p.path} : ` : ''}{p.message}</div>)}
+        {checks.katex.map((m, i) => <div key={i} className="detail">Formule : {m}</div>)}
       </div>
       <div className="review">
         <div className={`pane card${tab === 'edit' ? '' : ' hidden'}`}>
           {fiche.pages.map((p, i) => (
-            <div key={i} style={{ marginBottom: 16 }}>
-              <h3>Page {i + 1}</h3>
+            <div key={i}>
+              <h3 className="page-title">Page {i + 1}</h3>
               <FieldEditor label="Titre de la page" value={p.titre_page ?? ''} onChange={(v) => setFiche((f) => f && { ...f, pages: f.pages.map((q, qi) => (qi === i ? { ...q, titre_page: String(v) } : q)) })} />
               {p.blocks.map((b: Block, j) => (
-                <fieldset key={j} style={{ margin: '8px 0' }}>
+                <fieldset key={j}>
                   <legend>{b.type}</legend>
                   {Object.entries(b).filter(([k]) => k !== 'type').map(([k, v]) => <FieldEditor key={k} label={k} value={v} onChange={(nv) => updateBlock(i, j, k, nv)} />)}
                 </fieldset>
               ))}
             </div>
           ))}
-          <details>
-            <summary>JSON brut</summary>
+          <details className="adv json">
+            <summary>Modifier le JSON brut</summary>
             <TextArea label="JSON brut" rows={12} defaultValue={JSON.stringify(fiche, null, 2)} key={JSON.stringify(fiche).length}
               onBlur={(e) => appliquerRaw(e.target.value)} />
-            {rawMsg && <p role="alert">{rawMsg}</p>}
+            {rawMsg && <Notice kind="error">{rawMsg}</Notice>}
           </details>
         </div>
         <div className={`pane${tab === 'preview' ? '' : ' hidden'}`}>
-          <div className="export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />
+          <div className="export-root previewbox" ref={preview} />
         </div>
       </div>
-      <div className="card" style={{ marginTop: 8 }}>
-        <p style={{ marginTop: 0 }}>Checklist de relecture</p>
-        {items.map((it, i) => (
-          <label key={it} style={{ display: 'block' }}>
-            <input type="checkbox" checked={checked[i] ?? false} onChange={(e) => setChecked((c) => c.map((x, k) => (k === i ? e.target.checked : x)))} /> {it}
-          </label>
-        ))}
-        <TextArea label="Consigne pour Gemini (par exemple : découpe la page 3)" rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
-        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-          <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
-          <AsyncButton className="btn" fx="shine" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider</AsyncButton>
+
+      {msg && <Notice kind={msg.startsWith('Fiche validée') || msg.startsWith('Correction') ? 'ok' : 'error'}>{msg}</Notice>}
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <h2 className="h2" style={{ margin: '0 0 4px' }}>Avant de valider</h2>
+        <p className="progress-text">{nbCoches} sur {items.length} contrôle{items.length > 1 ? 's' : ''} fait{nbCoches > 1 ? 's' : ''}</p>
+        <div className="checklist">
+          {items.map((it, i) => (
+            <label key={it}>
+              <input type="checkbox" checked={checked[i] ?? false} onChange={(e) => setChecked((c) => c.map((x, k) => (k === i ? e.target.checked : x)))} />
+              <span>{it}</span>
+            </label>
+          ))}
         </div>
-        {!peutValider && <p style={{ fontSize: 13 }}>Valider s'active quand toutes les cases sont cochées et que schéma, lint et KaTeX sont au vert.</p>}
-        {msg && <p role="status">{msg}</p>}
+        <TextArea label="Demander une correction à Gemini" hint="Par exemple : découpe la page 3 en deux." rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+        <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
       </div>
+
+      <div className="actionbar">
+        <div className="grow">{reste || (busy ? 'Un instant…' : <b>Prête à valider</b>)}</div>
+        <div className="btns">
+          <AsyncButton className="btn btn-lg" fx="shine" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider la fiche</AsyncButton>
+        </div>
+      </div>
+
       {conflict !== null && (
-        <div className="card" style={{ marginTop: 8 }}>
-          <p>Cette fiche a changé ailleurs. Compare puis choisis.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <div><b>Version distante</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{conflict}</pre></div>
-            <div><b>Ma version</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{JSON.stringify(fiche, null, 2)}</pre></div>
+        <div className="card">
+          <h2 className="h2" style={{ margin: '0 0 8px' }}>Cette fiche a changé ailleurs</h2>
+          <p className="muted">Compare les deux versions, puis choisis laquelle garder.</p>
+          <div className="diff">
+            <div><b>Version sur GitHub</b><pre>{conflict}</pre></div>
+            <div><b>Ma version</b><pre>{JSON.stringify(fiche, null, 2)}</pre></div>
           </div>
-          <button className="btn" onClick={() => void valider(true)}>Écraser</button> <button className="btn ghost" onClick={() => setConflict(null)}>Annuler</button>
+          <div className="toolbar" style={{ marginTop: 16, marginBottom: 0 }}>
+            <button className="btn" onClick={() => void valider(true)}>Écraser avec ma version</button>
+            <button className="btn ghost" onClick={() => setConflict(null)}>Annuler</button>
+          </div>
         </div>
       )}
     </div>

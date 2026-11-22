@@ -1,0 +1,1094 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index f629414..374c803 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from 'react';
++import { useEffect, useState } from 'react';
+ import Cours from './ui/Cours';
+ import Generate from './ui/Generate';
+ import Library from './ui/Library';
+@@ -7,10 +7,20 @@ import type { Brief } from './lib/types';
+ import type { Draft } from './lib/storage/db';
+ import Settings from './ui/Settings';
+ import { useDb, useRepo } from './ui/hooks';
++import { Notice, PageHead } from './ui/kit';
++import { getSettings } from './lib/storage/settings';
+ 
+ export const ENTREES = ['Générer', 'Relire', 'Bibliothèque', 'Cours', 'Réglages'] as const;
+ export type Entree = (typeof ENTREES)[number];
+ 
++const LEAD: Record<Entree, string> = {
++  Générer: 'Décris le sujet, Gemini écrit la fiche et la contrôle jusqu’à 4 fois avant de te la rendre.',
++  Relire: 'Corrige les blocs, coche la checklist, puis valide : la fiche est enregistrée dans ton dépôt.',
++  Bibliothèque: 'Retrouve tes fiches et tes cours, puis exporte-les en PDF ou en image.',
++  Cours: 'Transforme un PDF, des photos ou du texte en cours Markdown, vérifié page par page.',
++  Réglages: 'Connecte ton dépôt GitHub et Gemini, puis règle l’apparence.',
++};
++
+ export default function App() {
+   const [entree, setEntree] = useState<Entree>('Générer');
+   const repo = useRepo();
+@@ -18,19 +28,45 @@ export default function App() {
+   const [redo, setRedo] = useState<Brief | null>(null);
+   const [draft, setDraft] = useState<Draft | null>(null);
+   const [editPath, setEditPath] = useState<string | null>(null);
++  const [nbDrafts, setNbDrafts] = useState(0);
++  const [, setTick] = useState(0);
+   const quadrille = entree !== 'Relire';
++
++  useEffect(() => { if (db) void db.listDrafts().then((l) => setNbDrafts(l.length)); }, [db, entree]);
++  useEffect(() => {
++    const f = () => setTick((n) => n + 1);
++    window.addEventListener('sequentia-settings-changed', f);
++    return () => window.removeEventListener('sequentia-settings-changed', f);
++  }, []);
++  useEffect(() => { window.scrollTo({ top: 0 }); document.title = `${entree} · Séquentia`; }, [entree]);
++
++  const s = getSettings();
++  const manque = !repo ? 'ton jeton GitHub et ton dépôt' : !s.geminiKey ? 'ta clé Gemini' : '';
++
+   return (
+     <div className={`app${quadrille ? ' grid-bg' : ''}`}>
+-      <div className="logo">sequentia</div>
++      <div className="topbar"><div className="logo">sequentia</div></div>
+       <nav className="nav" aria-label="Navigation">
+         {ENTREES.map((e) => (
+           <button key={e} aria-current={e === entree ? 'page' : undefined} onClick={() => setEntree(e)}>
+             {e}
++            {e === 'Générer' && nbDrafts > 0 && <span className="dot" aria-label={`${nbDrafts} brouillon${nbDrafts > 1 ? 's' : ''}`}>{nbDrafts}</span>}
+           </button>
+         ))}
+       </nav>
+-      <h1 className="titre">{entree}</h1>
+-      {entree === 'Réglages' ? <Settings /> : entree === 'Cours' ? <Cours repo={repo} db={db} /> : entree === 'Relire' ? <Review repo={repo} db={db} draft={draft} path={editPath} /> : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} onOpenDraft={(d) => { setDraft(d); setEditPath(null); setEntree('Relire'); }} /> : entree === 'Bibliothèque' ? <Library repo={repo} db={db} onEdit={(p) => { setEditPath(p); setDraft(null); setEntree('Relire'); }} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} /> : <div className="card">Écran « {entree} » : à venir.</div>}
++      <main className="screen" key={entree}>
++        <PageHead title={entree} lead={LEAD[entree]} />
++        {manque && entree !== 'Réglages' && (
++          <Notice action={<button className="btn" onClick={() => setEntree('Réglages')}>Ouvrir les réglages</button>}>
++            Il manque {manque} pour que l’app fonctionne.
++          </Notice>
++        )}
++        {entree === 'Réglages' ? <Settings />
++          : entree === 'Cours' ? <Cours repo={repo} db={db} />
++          : entree === 'Relire' ? <Review repo={repo} db={db} draft={draft} path={editPath} onGoto={(e) => setEntree(e)} />
++          : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} onOpenDraft={(d) => { setDraft(d); setEditPath(null); setEntree('Relire'); }} />
++          : <Library repo={repo} db={db} onEdit={(p) => { setEditPath(p); setDraft(null); setEntree('Relire'); }} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} />}
++      </main>
+     </div>
+   );
+ }
+diff --git a/src/main.tsx b/src/main.tsx
+index 9aec260..145d8b8 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -4,6 +4,7 @@ import '@fontsource-variable/inter';
+ import 'katex/dist/katex.min.css';
+ import './theme/theme.css';
+ import './theme/apple.css';
++import './theme/design.css';
+ import App from './App';
+ import { getSettings } from './lib/storage/settings';
+ import { GithubRepo } from './lib/github/repo';
+diff --git a/src/theme/design.css b/src/theme/design.css
+new file mode 100644
+index 0000000..57630cc
+--- /dev/null
++++ b/src/theme/design.css
+@@ -0,0 +1,195 @@
++/* Séquentia — mise en page, hiérarchie, états. Chargée après apple.css.
++   Principe : le quadrillé et le rouge restent la signature ; tout le reste se tait.
++   Un seul moment orchestré : le changement d'écran. Le reste du mouvement répond à un geste. */
++
++:root {
++  --gap: 20px;
++  --measure: 62ch;
++  --muted: color-mix(in srgb, var(--text) 62%, transparent);
++  --hair: color-mix(in srgb, var(--text) 12%, transparent);
++}
++
++/* ───────── Structure ───────── */
++.app { display: flex; flex-direction: column; padding-bottom: calc(env(safe-area-inset-bottom) + 112px); }
++.app > .screen { display: block; }
++.app .card { margin: 0 0 var(--gap); }
++.app .card > :first-child { margin-top: 0; }
++.app .card > :last-child { margin-bottom: 0; }
++
++.topbar { display: flex; align-items: center; gap: 16px; }
++.topbar .logo { padding: 18px 0 4px; margin-right: auto; }
++.logo { display: block; }
++
++/* Navigation : l'écran courant est marqué par une forme, pas seulement par la couleur */
++.nav button { position: relative; }
++
++.nav .dot { min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; letter-spacing: 0; }
++
++/* Titre d'écran : une phrase d'usage sous le titre */
++.pagehead { margin: 28px 0 24px; }
++.pagehead .titre { margin: 0 0 8px; font-size: clamp(34px, 5.4vw, 52px); }
++.pagehead .lead { margin: 0; max-width: var(--measure); font-size: 17px; color: var(--muted); }
++
++/* Changement d'écran : l'unique entrée animée de l'app */
++.screen { animation: screen-in 320ms var(--ease-out-expo) both; }
++@keyframes screen-in { from { opacity: 0; transform: translateY(10px); } }
++
++/* ───────── Formulaires ───────── */
++.group { padding: 4px 0 8px; }
++.group + .group { margin-top: 28px; padding-top: 28px; border-top: 1px solid var(--hair); }
++.group-head h2 { margin: 0; font-family: var(--font-section); font-size: 20px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
++.group-head p { margin: 4px 0 0; font-size: 15px; color: var(--muted); max-width: var(--measure); }
++.group-head { margin-bottom: 12px; }
++.grid2 { display: grid; gap: 0 16px; grid-template-columns: 1fr; }
++.grid3 { display: grid; gap: 0 16px; grid-template-columns: 1fr; }
++@media (min-width: 640px) { .grid2 { grid-template-columns: 1fr 1fr; } .grid3 { grid-template-columns: repeat(3, 1fr); } }
++.grid2 > .field, .grid3 > .field { margin: 8px 0; }
++
++.adv { margin-top: 20px; border-top: 1px solid var(--hair); padding-top: 14px; }
++.adv > summary, .attempts > summary, .json > summary {
++  cursor: pointer; font-weight: 600; font-size: 15px; list-style: none; display: flex; align-items: center; gap: 8px; min-height: 36px;
++}
++.adv > summary::-webkit-details-marker, .attempts > summary::-webkit-details-marker, .json > summary::-webkit-details-marker { display: none; }
++.adv > summary::before, .attempts > summary::before, .json > summary::before {
++  content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
++  transform: rotate(-45deg); transition: transform var(--dur-fast) var(--ease-apple); opacity: .6;
++}
++.adv[open] > summary::before, .attempts[open] > summary::before, .json[open] > summary::before { transform: rotate(45deg); }
++
++/* Zone de dépôt : un fichier à choisir, dit clairement */
++.drop {
++  display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin: 0 0 16px; border: 1.5px dashed color-mix(in srgb, var(--text) 25%, transparent);
++  border-radius: var(--r-field); cursor: pointer; font-size: 15px;
++  transition: border-color var(--dur-fast) var(--ease-apple), background-color var(--dur-fast) var(--ease-apple);
++}
++.drop:hover, .drop:focus-within { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
++.drop svg { flex: none; color: var(--accent-text); }
++.drop b { display: block; font-weight: 600; }
++.drop span { color: var(--muted); font-size: 14px; }
++.drop input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
++.drop-row { display: grid; gap: 0 16px; grid-template-columns: 1fr; }
++@media (min-width: 640px) { .drop-row { grid-template-columns: 1fr 1fr; } }
++
++/* ───────── Barre d'action collée en bas ───────── */
++.actionbar {
++  position: sticky; bottom: calc(env(safe-area-inset-bottom) + 12px); z-index: 15; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
++  margin: 8px 0 var(--gap); padding: 12px 14px 12px 20px; border-radius: var(--r-card);
++  background: color-mix(in srgb, var(--card) 80%, transparent);
++  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
++  border: 1px solid var(--hair); box-shadow: var(--shadow-md);
++}
++.actionbar .grow { flex: 1 1 200px; min-width: 0; font-size: 14px; color: var(--muted); }
++.actionbar .grow b { color: var(--text); font-weight: 600; }
++.actionbar .btns { display: flex; gap: 8px; flex-wrap: wrap; }
++.btn-lg { min-height: 52px; padding: 0 30px; font-size: 17px; }
++
++/* Jauge de requêtes */
++.quota { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
++.quota-bar { width: 56px; height: 6px; border-radius: 3px; background: var(--tint-hover); overflow: hidden; }
++.quota-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--dur-base) var(--ease-apple); }
++.quota-bar i[data-hot] { background: var(--warn); }
++
++/* Étapes de génération */
++.stepper { display: flex; gap: 4px; height: 6px; width: 100%; max-width: 220px; margin: 8px 0 0; }
++.stepper span { flex: 1; border-radius: 3px; background: var(--tint-hover); transition: background-color var(--dur-base) var(--ease-apple); }
++.stepper span[data-s="done"] { background: var(--accent); }
++.stepper span[data-s="now"] { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
++
++/* ───────── Messages ───────── */
++.notice {
++  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: start; margin: 0 0 var(--gap); padding: 14px 16px;
++  border-radius: var(--r-field); font-size: 15px; line-height: 1.4;
++  --c: var(--accent-text); background: color-mix(in srgb, var(--c) 10%, var(--card)); color: var(--text);
++  border: 1px solid color-mix(in srgb, var(--c) 28%, transparent);
++}
++.notice > svg { margin-top: 2px; color: var(--c); }
++.notice[data-k="ok"] { --c: var(--success); }
++.notice[data-k="error"] { --c: var(--danger); }
++.notice[data-k="info"] { --c: var(--accent-text); }
++.notice > div { min-width: 0; overflow-wrap: anywhere; }
++.notice button { min-height: 36px; padding: 0 16px; font-size: 14px; align-self: center; }
++.card .notice { margin: 16px 0 0; }
++
++/* ───────── Vide ───────── */
++.empty { padding: 28px 24px; border: 1.5px dashed color-mix(in srgb, var(--text) 20%, transparent); border-radius: var(--r-card); text-align: center; display: grid; justify-items: center; gap: 6px; margin-bottom: var(--gap); }
++.empty b { font-size: 17px; }
++.empty p { margin: 0 0 8px; color: var(--muted); max-width: 46ch; font-size: 15px; }
++
++/* ───────── Listes de brouillons et d'imports ───────── */
++.rows { display: grid; gap: 12px; margin: 0 0 var(--gap); padding: 0; list-style: none; }
++.rowcard { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 16px 20px; border-radius: var(--r-card); background: var(--card); }
++:root[data-mode="dark"] .rowcard { border: 1px solid var(--sep); }
++.rowcard .what { flex: 1 1 240px; min-width: 0; }
++.rowcard .what b { display: block; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
++.rowcard .what small { color: var(--muted); font-size: 14px; }
++.rowcard .acts { display: flex; gap: 8px; flex-wrap: wrap; }
++.rowcard button { min-height: 40px; padding: 0 18px; font-size: 15px; }
++.h2 { font-family: var(--font-section); font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 36px 0 12px; display: flex; align-items: baseline; gap: 10px; }
++.h2 small { font-family: var(--font-corps); font-size: 14px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
++
++/* ───────── Bibliothèque ───────── */
++.libgrid { list-style: none; padding: 0; margin: 0 0 var(--gap); display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
++.libcard { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; width: 100%; height: 100%; min-height: 108px; padding: 16px 18px; border-radius: var(--r-card); background: var(--card); cursor: pointer;
++  transition: transform var(--dur-base) var(--ease-apple), box-shadow var(--dur-base) var(--ease-apple), outline-color var(--dur-fast); outline: 2px solid transparent; }
++:root[data-mode="dark"] .libcard { border: 1px solid var(--sep); }
++.libcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
++.libcard:active { transform: scale(.985); }
++.libcard[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -2px; }
++.libcard:focus-visible { outline: 4px solid var(--focus); outline-offset: 2px; }
++.libcard b { font-size: 17px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
++.libcard .meta { margin-top: auto; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
++.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; letter-spacing: 0; background: var(--tint); color: var(--text); }
++.chip[data-k="ok"] { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); font-weight: 600; }
++.chip[data-k="accent"] { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); }
++
++.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
++.toolbar .sp { flex: 1; }
++.search { display: flex; gap: 12px; flex-wrap: wrap; }
++.search .field { margin: 0; flex: 1 1 220px; }
++.previewbox { margin-top: 8px; padding: 16px; border-radius: var(--r-field); background: var(--page-bg); overflow: auto; max-width: 100%; }
++.cours-text { white-space: pre-wrap; font-size: 15px; line-height: 1.55; max-width: 80ch; }
++
++/* ───────── Relecture ───────── */
++.checks { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
++.checks .detail { flex-basis: 100%; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
++.pane.card { max-height: none; }
++@media (min-width: 900px) { .review .pane.card, .review .pane { position: relative; } .review > .pane:last-child { position: sticky; top: 56px; max-height: calc(100vh - 72px); overflow: auto; } }
++fieldset { margin: 12px 0; padding: 4px 16px 12px; background: color-mix(in srgb, var(--text) 3%, transparent); }
++legend { padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
++.page-title { margin: 20px 0 4px; font-size: 20px; }
++.checklist { display: grid; gap: 4px; margin: 4px 0 16px; }
++.checklist label { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; min-height: 44px; cursor: pointer; line-height: 1.35; }
++.checklist input[type="checkbox"] { flex: none; margin: 0; }
++.progress-text { font-size: 14px; color: var(--muted); margin: 0 0 4px; }
++.diff { display: grid; gap: 12px; grid-template-columns: 1fr; }
++@media (min-width: 640px) { .diff { grid-template-columns: 1fr 1fr; } }
++.diff pre { margin: 6px 0 0; padding: 12px; border-radius: 12px; background: var(--page-bg); font-size: 12px; white-space: pre-wrap; max-height: 320px; overflow: auto; }
++
++/* ───────── Réglages et thème ───────── */
++.status-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
++.swatches { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
++.swatch { display: grid; gap: 8px; justify-items: stretch; width: 100%; height: auto; padding: 10px; border-radius: 16px; background: var(--card); border: 1.5px solid var(--sep); font-size: 14px; text-align: left; font-weight: 500; }
++.swatch i { display: block; width: 100%; height: 44px; border-radius: 10px; border: 1px solid var(--hair); position: relative; overflow: hidden; }
++.swatch i::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 16px; height: 16px; border-radius: 50%; background: var(--sw-accent, var(--accent)); }
++.swatch[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); background: var(--card); --b: var(--card); --f: var(--text); font-weight: 600; }
++.segmented { display: inline-flex; padding: 3px; border-radius: var(--r-pill); background: var(--tint); }
++.segmented button { --b: transparent; min-height: 38px; padding: 0 20px; font-size: 15px; }
++.segmented button[aria-pressed="true"] { --b: var(--card); --f: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
++.colors { display: flex; gap: 12px; flex-wrap: wrap; }
++.colors label { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
++.colors input[type="color"] { width: 56px; height: 44px; padding: 2px; border: 1.5px solid var(--sep); border-radius: 12px; background: var(--card); cursor: pointer; }
++.muted { color: var(--muted); }
++
++/* ───────── Petits écrans ───────── */
++@media (max-width: 640px) {
++  .nav button { padding: 0 10px; font-size: 13.5px; }
++  .notice { grid-template-columns: auto 1fr; }
++  .notice > button { grid-column: 1 / -1; width: 100%; }
++  .actionbar { padding: 12px; }
++  .actionbar .btns, .actionbar .btns > *, .actionbar .btns button { width: 100%; }
++  .rowcard .acts button { flex: 1 1 auto; }
++  .app .card { padding: 16px; }
++}
++
++@media (prefers-reduced-motion: reduce) { .screen { animation: none; } .stepper span[data-s="now"] { animation: none; } }
++@media print { .actionbar, .topbar { display: none !important; } }
+diff --git a/src/ui/Cours.tsx b/src/ui/Cours.tsx
+index 9ee2565..20cd6bd 100644
+--- a/src/ui/Cours.tsx
++++ b/src/ui/Cours.tsx
+@@ -19,6 +19,7 @@ import type { Problem } from '../lib/types';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
+ import { messageFor } from './messages';
++import { Empty, Notice, Quota, Section } from './kit';
+ import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
+ 
+ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+@@ -188,39 +189,40 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+   };
+ 
+   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
+-  if (!db) return <div className="card">Chargement…</div>;
++  if (!db) return <div className="card muted">Chargement…</div>;
+ 
+   if (view) {
+     return (
+       <div>
+-        <div className="card" style={{ marginBottom: 8 }}>
++        <div className="card">
++          <div className="grid2">
+           <SelectField label="Matière" value={view.meta.matiere} onChange={(e) => setView({ ...view, meta: { ...view.meta, matiere: e.target.value } })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+           <TextField label="Chapitre" value={view.meta.chapitre} onChange={(e) => setView({ ...view, meta: { ...view.meta, chapitre: e.target.value } })} />
+-          <div style={{ marginTop: 8 }}>
+-            {problems.length === 0 ? 'Contrôles : tout est au vert' : <ul style={{ margin: 0 }}>{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul>}
+           </div>
++          {problems.length === 0 ? <Notice kind="ok">Tous les contrôles sont au vert.</Notice> : <Notice kind="error"><ul style={{ margin: 0, paddingLeft: 18 }}>{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul></Notice>}
+         </div>
+         <div className="review">
+           <div className="pane card">
+-            <b>Page source</b>
+-            {total > 0 && <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Précédente</button><span>{page} / {total}</span><button disabled={page >= total} onClick={() => setPage(page + 1)}>Suivante</button></div>}
++            <h3 className="page-title" style={{ marginTop: 0 }}>Page source</h3>
++            {total > 0 && <div className="toolbar"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Précédente</button><span className="muted" aria-live="polite">Page {page} sur {total}</span><button disabled={page >= total} onClick={() => setPage(page + 1)}>Suivante</button></div>}
+             {imgUrl ? <img src={imgUrl} alt={`Page ${page}`} style={{ maxWidth: '100%' }} /> : lotOf ? <canvas ref={canvas} style={{ maxWidth: '100%' }} /> : <p>Pas de page source (texte importé tel quel).</p>}
+           </div>
+           <div className="pane card">
+-            <b>Rendu</b>
++            <h3 className="page-title" style={{ marginTop: 0 }}>Rendu</h3>
+             <div ref={preview} style={{ maxHeight: 420, overflow: 'auto' }} />
+           </div>
+         </div>
+-        <div className="card" style={{ marginTop: 8 }}>
++        <div className="card">
+           <TextArea label="Texte du cours (Markdown)" rows={12} value={view.md} onChange={(e) => setView({ ...view, md: e.target.value })} />
+-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+-            <button disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer (à vérifier)</button>
+-            <FxButton fx="shine" className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</FxButton>
+-            <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
++          <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
++            <FxButton fx="shine" className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours</FxButton>
++            <button className="btn ghost" disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer sans valider</button>
++            <span className="sp" />
+             {conflict && <button onClick={() => void save(conflict, true)}>Écraser le cours existant</button>}
++            <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
+           </div>
+-          {!repo && <p>Ajoute ton jeton GitHub dans Réglages pour enregistrer.</p>}
+-          {msg && <p role="status">{msg}</p>}
++          {!repo && <Notice>Ajoute ton jeton GitHub dans Réglages pour enregistrer.</Notice>}
++          {msg && <Notice kind={msg.startsWith('Cours enregistré') || msg.includes('enregistré') ? 'ok' : 'info'}>{msg}</Notice>}
+         </div>
+       </div>
+     );
+@@ -229,28 +231,58 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+   return (
+     <div>
+       <div className="card">
+-        <SelectField label="Matière" value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+-        <SelectField label="Niveau" value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></SelectField>
+-        <TextField label="Chapitre" value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} />
+-        <label style={{ display: 'block', marginTop: 8 }}>Choisir dans Fichiers (PDF, images, .md, .tex, .txt) <input type="file" multiple accept="application/pdf,image/*,.md,.tex,.txt" onChange={(e) => void onFiles(e.target.files)} /></label>
+-        <label style={{ display: 'block', marginTop: 8 }}>Appareil photo <input type="file" accept="image/*" capture="environment" onChange={(e) => void onFiles(e.target.files)} /></label>
+-        <TextArea label="Ou coller du texte" rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} />
+-        <button disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
+-        <p>Requêtes aujourd'hui : {used}</p>
++        <Section title="Quel cours ?">
++          <div className="grid3">
++            <SelectField label="Matière" value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
++            <SelectField label="Niveau" value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></SelectField>
++            <TextField label="Chapitre" value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} />
++          </div>
++        </Section>
++        <Section title="D’où vient-il ?" hint="PDF, photos ou fichiers texte sont découpés en lots, transcrits puis contrôlés.">
++          <div className="drop-row">
++            <label className="drop">
++              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
++              <div><b>Choisir dans Fichiers</b><span>PDF, images, .md, .tex, .txt</span></div>
++              <input type="file" multiple accept="application/pdf,image/*,.md,.tex,.txt" onChange={(e) => void onFiles(e.target.files)} />
++            </label>
++            <label className="drop">
++              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
++              <div><b>Prendre une photo</b><span>Appareil photo de l’iPad</span></div>
++              <input type="file" accept="image/*" capture="environment" onChange={(e) => void onFiles(e.target.files)} />
++            </label>
++          </div>
++          <TextArea label="Ou coller du texte" rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} />
++          <div className="toolbar" style={{ marginBottom: 0 }}>
++            <button className="btn" disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
++            <span className="sp" />
++            <Quota used={used} />
++          </div>
++        </Section>
+       </div>
+-      {msg && <p role="status">{msg}</p>}
+-      <h2 className="titre" style={{ fontSize: 24 }}>Imports en cours</h2>
+-      {rows.length === 0 && <div className="card">Aucun import.</div>}
+-      {live && <p role="status" aria-live="polite">{live}</p>}
++      {msg && <Notice kind={/impossible|refus|échec|erreur/i.test(msg) ? 'error' : 'info'}>{msg}</Notice>}
++      <h2 className="h2">Imports en cours <small>{rows.length > 0 ? `${rows.length}` : ''}</small></h2>
++      {rows.length === 0 && <Empty title="Aucun import">Dépose un PDF ou des photos ci-dessus : la progression de chaque lot s’affichera ici.</Empty>}
++      {live && <p role="status" aria-live="polite" className="muted">{live}</p>}
++      <ul className="rows">
+       {rows.map((r) => {
+         const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
+         const ok = r.lots.filter((l) => l.state === 'ok').length;
+         const stateOf = (l: LotInfo, i: number) => (runningId === r.id && i === r.done && l.state === 'pending' ? 'running' as const : l.state);
+         return (
+-          <div key={r.id} className="card" style={{ marginBottom: 8 }}>
+-            <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
++          <li key={r.id} className="card" style={{ marginBottom: 0 }}>
++            <div className="rowcard" style={{ padding: 0, background: 'transparent', border: 0 }}>
++              <div className="what">
++                <b>{r.meta?.chapitre ?? r.id}</b>
++                <small>{r.meta?.source} · {r.done} sur {r.total} lots</small>
++              </div>
++              <div className="acts">
++                <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
++                <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
++                <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
++              </div>
++            </div>
+             <SegmentBar label={`${r.done} lots traités sur ${r.total}, ${bad} à contrôler`} segments={r.lots.map((l, i) => ({ state: stateOf(l, i), title: `Lot ${i + 1}` }))} />
+-            <details open={bad > 0}>
++            <details className="adv" style={{ marginTop: 8, paddingTop: 8 }} open={bad > 0}>
+               <summary>{ok} lot{ok > 1 ? 's' : ''} vérifié{ok > 1 ? 's' : ''}{bad > 0 ? `, ${bad} à contrôler` : ''}</summary>
+               <ul className="lots">
+                 {r.lots.map((l, i) => (
+@@ -258,19 +290,15 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+                     <StatusBadge state={stateOf(l, i)} />
+                     <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
+                     <span className="note">{describeLot(l)}</span>
+-                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
++                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
+                   </li>
+                 ))}
+               </ul>
+             </details>
+-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+-              <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+-              <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
+-              <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
+-            </div>
+-          </div>
++          </li>
+         );
+       })}
++      </ul>
+       <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
+     </div>
+   );
+diff --git a/src/ui/Generate.tsx b/src/ui/Generate.tsx
+index f0e4684..ac1eb3c 100644
+--- a/src/ui/Generate.tsx
++++ b/src/ui/Generate.tsx
+@@ -11,10 +11,11 @@ import { exportDraft, type Db, type Draft } from '../lib/storage/db';
+ import { getSettings } from '../lib/storage/settings';
+ import type { Brief, Fiche, Problem } from '../lib/types';
+ import { makeGenerateDeps } from './geminiDeps';
+-import { AttemptLog, StatusBadge } from './status';
++import { AttemptLog } from './status';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
+ import { messageFor } from './messages';
++import { Empty, Notice, Quota, Section, Stepper } from './kit';
+ 
+ type Props = { repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void };
+ 
+@@ -98,41 +99,86 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+   };
+ 
+   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
++  const pret = f.sujet.trim() && f.chapitre.trim();
++  const ok = msg.startsWith('Brouillon prêt');
+ 
+   return (
+     <div>
+       <div className="card">
+-        <label>Importer un brief (.json) <input type="file" accept="application/json,.json" onChange={(e) => void importBrief(e.target.files?.[0])} /></label>
+-        <SelectField label="Matière" value={f.matiere} onChange={(e) => set('matiere', e.target.value)}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+-        <SelectField label="Niveau" value={f.niveau} onChange={(e) => set('niveau', e.target.value)}><option>mpsi</option><option>terminale</option></SelectField>
+-        <SelectField label="Format" value={f.format} onChange={(e) => set('format', e.target.value)}><option value="fiche">Fiche A4</option><option value="post">Post 4:5</option></SelectField>
+-        <TextField label="Chapitre" value={f.chapitre} onChange={(e) => set('chapitre', e.target.value)} />
+-        <TextField label="Sujet" value={f.sujet} onChange={(e) => set('sujet', e.target.value)} />
+-        <TextArea label="Contenu obligatoire (une ligne par point)" rows={4} value={f.contenu} onChange={(e) => set('contenu', e.target.value)} />
+-        <TextArea label="Pièges (une ligne par point)" rows={3} value={f.pieges} onChange={(e) => set('pieges', e.target.value)} />
+-        <TextArea label="Exemples (une ligne par point)" rows={2} value={f.exemples} onChange={(e) => set('exemples', e.target.value)} />
+-        <TextField label="Nombre de QCM" type="number" min={0} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />
+-        <TextArea label="À exclure (une ligne par point)" rows={2} value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />
+-        <TextArea label="Consignes" rows={2} value={f.consignes} onChange={(e) => set('consignes', e.target.value)} />
+-        <FxButton fx="magnetic" className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</FxButton>
+-        <span style={{ marginLeft: 12 }}>Requêtes aujourd'hui : {used}</span>
+-      </div>
+-      {busy && <p role="status" aria-live="polite"><StatusBadge state={live ? 'retry' : 'running'}>{live || `Tour ${tour} sur 4`}</StatusBadge></p>}
+-      {msg && <p role="status">{msg}</p>}
+-      <AttemptLog refreshKey={`${msg}|${busy}`} />
+-      {problems.length > 0 && <ul>{problems.map((p, i) => <li key={i}>{p.code}{p.path ? ` ${p.path}` : ''} : {p.message}</li>)}</ul>}
+-      <h2 className="titre" style={{ fontSize: 24 }}>Brouillons</h2>
+-      {drafts.length === 0 && <div className="card">Aucun brouillon.</div>}
+-      {drafts.map((d) => (
+-        <div key={d.id} className="card" style={{ marginBottom: 8 }}>
+-          <b>{d.fiche?.meta.titre ?? d.id}</b> {d.fiche ? <span className="badge">à vérifier</span> : <span className="badge">échec, dernier essai</span>}
+-          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+-            <button onClick={() => onOpenDraft(d)}>Relire</button>
+-            <button onClick={() => downloadText(`${d.id}.json`, exportDraft(d))}>Exporter le JSON</button>
+-            <button onClick={async () => { await db?.deleteDraft(d.id); await refresh(); }}>Supprimer</button>
++        <label className="drop">
++          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" /></svg>
++          <div><b>Reprendre un brief existant</b><span>Choisis un fichier .json pour remplir le formulaire</span></div>
++          <input type="file" accept="application/json,.json" onChange={(e) => void importBrief(e.target.files?.[0])} />
++        </label>
++
++        <Section title="Le sujet" hint="Ces deux champs sont obligatoires.">
++          <div className="grid3">
++            <SelectField label="Matière" value={f.matiere} onChange={(e) => set('matiere', e.target.value)}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
++            <SelectField label="Niveau" value={f.niveau} onChange={(e) => set('niveau', e.target.value)}><option>mpsi</option><option>terminale</option></SelectField>
++            <SelectField label="Format" value={f.format} onChange={(e) => set('format', e.target.value)}><option value="fiche">Fiche A4</option><option value="post">Post 4:5</option></SelectField>
++          </div>
++          <div className="grid2">
++            <TextField label="Chapitre" required value={f.chapitre} onChange={(e) => set('chapitre', e.target.value)} />
++            <TextField label="Sujet de la fiche" required value={f.sujet} onChange={(e) => set('sujet', e.target.value)} />
+           </div>
++        </Section>
++
++        <Section title="Ce que la fiche doit contenir" hint="Une idée par ligne. Plus c’est précis, moins il y a de tours de correction.">
++          <TextArea label="Points obligatoires" rows={4} value={f.contenu} onChange={(e) => set('contenu', e.target.value)} />
++          <div className="grid2">
++            <TextArea label="Pièges à signaler" rows={3} value={f.pieges} onChange={(e) => set('pieges', e.target.value)} />
++            <TextArea label="Exemples à inclure" rows={3} value={f.exemples} onChange={(e) => set('exemples', e.target.value)} />
++          </div>
++          <TextField label="Nombre de QCM" type="number" min={0} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />
++        </Section>
++
++        <details className="adv" open={!!(f.exclure || f.consignes)}>
++          <summary>Options avancées</summary>
++          <TextArea label="À exclure" rows={2} hint="Notions à ne pas aborder, une par ligne." value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />
++          <TextArea label="Consignes de style" rows={2} value={f.consignes} onChange={(e) => set('consignes', e.target.value)} />
++        </details>
++      </div>
++
++      {msg && !busy && <Notice kind={ok ? 'ok' : problems.length || msg.startsWith('La fiche') ? 'error' : 'info'}>{msg}</Notice>}
++      {problems.length > 0 && !busy && (
++        <details className="adv" style={{ marginTop: -8, marginBottom: 20 }}>
++          <summary>{problems.length} point{problems.length > 1 ? 's' : ''} à corriger dans la fiche</summary>
++          <ul>{problems.map((p, i) => <li key={i}>{p.code}{p.path ? ` ${p.path}` : ''} : {p.message}</li>)}</ul>
++        </details>
++      )}
++
++      <div className="actionbar">
++        <div className="grow" role="status" aria-live="polite">
++          {busy ? (
++            <>
++              <b>{live || `Tour ${Math.max(tour, 1)} sur 4`}</b>
++              <Stepper current={Math.max(tour, 1)} total={4} label={`Tour ${tour} sur 4`} />
++            </>
++          ) : pret ? <Quota used={used} /> : <span>Renseigne le chapitre et le sujet pour lancer la génération.</span>}
++        </div>
++        <div className="btns">
++          <FxButton fx="magnetic" className="btn btn-lg" disabled={busy || !pret} onClick={() => void run()}>{busy ? 'Génération en cours…' : 'Générer la fiche'}</FxButton>
+         </div>
+-      ))}
++      </div>
++      <AttemptLog refreshKey={`${msg}|${busy}`} />
++
++      <h2 className="h2">Brouillons <small>{drafts.length > 0 ? `${drafts.length} à relire` : ''}</small></h2>
++      {drafts.length === 0 && <Empty title="Aucun brouillon">Les fiches générées arrivent ici, prêtes à être relues avant d’être validées.</Empty>}
++      <ul className="rows">
++        {drafts.map((d) => (
++          <li key={d.id} className="rowcard">
++            <div className="what">
++              <b>{d.fiche?.meta.titre ?? d.id}</b>
++              <small>{d.fiche ? <span className="chip" data-k="accent">À relire</span> : <span className="chip">Dernier essai incomplet</span>}</small>
++            </div>
++            <div className="acts">
++              <button className="btn" onClick={() => onOpenDraft(d)}>Relire</button>
++              <button onClick={() => downloadText(`${d.id}.json`, exportDraft(d))}>Exporter le JSON</button>
++              <button onClick={async () => { await db?.deleteDraft(d.id); await refresh(); }}>Supprimer</button>
++            </div>
++          </li>
++        ))}
++      </ul>
+     </div>
+   );
+ }
+diff --git a/src/ui/Library.tsx b/src/ui/Library.tsx
+index e2153a5..e3b0d62 100644
+--- a/src/ui/Library.tsx
++++ b/src/ui/Library.tsx
+@@ -5,6 +5,7 @@ import { printPages } from '../lib/export/pdf';
+ import { exportPng, isLikelyBlank } from '../lib/export/png';
+ import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
+ import { StatusBadge } from './status';
++import { Empty, Notice } from './kit';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
+ import { renderFiche } from '../lib/render/renderFiche';
+@@ -82,42 +83,51 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+     } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); return false; }
+   };
+ 
+-  if (!repo) return <div className="card">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</div>;
++  if (!repo) return <Empty title="Bibliothèque non connectée">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</Empty>;
+ 
+   return (
+     <div>
+-      <div className="card" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+-        <TextField label="Rechercher" value={text} onChange={(e) => setText(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 240px' }} />
+-        <SelectField label="Matière" value={matiere} onChange={(e) => setMatiere(e.target.value)} fieldStyle={{ margin: 0, flex: '1 1 200px' }}>
++      <div className="card search">
++        <TextField label="Rechercher une fiche ou un cours" value={text} onChange={(e) => setText(e.target.value)} fieldStyle={{ margin: 0 }} />
++        <SelectField label="Matière" value={matiere} onChange={(e) => setMatiere(e.target.value)} fieldStyle={{ margin: 0, maxWidth: 280 }}>
+           <option value="">Toutes les matières</option>
+           {matieres.map((m) => <option key={m}>{m}</option>)}
+         </SelectField>
+       </div>
+-      {msg && <p role="alert">{msg}</p>}
+-      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+-        {shown.map((i) => (
+-          <li key={i.path} className="card lift">
+-            <button onClick={() => open(i)} style={{ all: 'unset', cursor: 'pointer', display: 'block' }}>
+-              <b>{i.slug}</b> · {i.matiere} · {i.kind === 'cours' ? 'cours' : 'fiche'}
+-              {i.statut === 'verifie' && <span className="badge ok"> validée</span>}
+-            </button>
+-          </li>
+-        ))}
+-        {shown.length === 0 && <li className="card">Aucun élément.</li>}
+-      </ul>
++      {msg && <Notice kind="error">{msg}</Notice>}
++      {shown.length === 0
++        ? <Empty title={items.length === 0 ? 'Rien dans la bibliothèque pour l’instant' : 'Aucun résultat'}>{items.length === 0 ? 'Valide une fiche ou enregistre un cours : il apparaîtra ici.' : 'Essaie un autre mot, ou choisis « Toutes les matières ».'}</Empty>
++        : (
++          <ul className="libgrid">
++            {shown.map((i) => (
++              <li key={i.path}>
++                <button className="libcard" aria-pressed={sel?.path === i.path} onClick={() => open(i)}>
++                  <b>{i.slug}</b>
++                  <span className="meta">
++                    <span className="chip">{i.matiere}</span>
++                    <span className="chip">{i.kind === 'cours' ? 'Cours' : 'Fiche'}</span>
++                    {i.statut === 'verifie' && <span className="chip" data-k="ok">Validée</span>}
++                  </span>
++                </button>
++              </li>
++            ))}
++          </ul>
++        )}
+       {sel && (
+-        <div className="card" style={{ marginTop: 12 }}>
+-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+-            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF (vérifié)</AsyncButton>}
+-            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer (PDF vectoriel)</button>}
++        <div className="card screen" key={sel.path}>
++          <div className="h2" style={{ margin: '0 0 12px' }}>{sel.slug}</div>
++          <div className="toolbar">
++            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF</AsyncButton>}
+             {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
++            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer</button>}
++            <span className="sp" />
+             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
+-            {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
++            {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir du brief</button>}
+             {fiche && (
+               <button className="btn ghost" onClick={async () => {
+                 try { await setExemple(repo, sel.path, !fiche.meta.exemple); setFiche({ ...fiche, meta: { ...fiche.meta, exemple: !fiche.meta.exemple } }); }
+                 catch { setMsg("Impossible d'enregistrer. Réessayer"); }
+-              }}>{fiche.meta.exemple ? 'Retirer des exemples' : 'Marquer comme exemple de style'}</button>
++              }}>{fiche.meta.exemple ? 'Retirer des exemples de style' : 'Utiliser comme exemple de style'}</button>
+             )}
+           </div>
+           {report && (
+@@ -126,8 +136,9 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+               {report.problems.map((p, i) => <span key={i}>{p}</span>)}
+             </div>
+           )}
+-          {fiche && <div className="print-area export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
+-          {cours && <pre style={{ whiteSpace: 'pre-wrap' }}>{cours}</pre>}
++          {!fiche && !cours && !msg && <p className="muted">Ouverture…</p>}
++          {fiche && <div className="print-area export-root previewbox" ref={preview} />}
++          {cours && <pre className="cours-text">{cours}</pre>}
+         </div>
+       )}
+     </div>
+diff --git a/src/ui/Review.tsx b/src/ui/Review.tsx
+index 2c4ad56..68b1447 100644
+--- a/src/ui/Review.tsx
++++ b/src/ui/Review.tsx
+@@ -17,8 +17,10 @@ import AsyncButton from './AsyncButton';
+ import { TextArea, TextField } from './Field';
+ import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
+ import { messageFor } from './messages';
++import { Empty, Notice } from './kit';
++import { StatusBadge } from './status';
+ 
+-type Props = { repo: GithubRepo | null; db: Db | null; draft: Draft | null; path: string | null };
++type Props = { repo: GithubRepo | null; db: Db | null; draft: Draft | null; path: string | null; onGoto?: (e: 'Générer' | 'Bibliothèque') => void };
+ type Checks = { schema: Problem[]; lint: Problem[]; katex: string[]; overflow: number[] };
+ 
+ function FieldEditor({ label, value, onChange }: { label: string; value: unknown; onChange: (v: unknown) => void }) {
+@@ -29,7 +31,7 @@ function FieldEditor({ label, value, onChange }: { label: string; value: unknown
+   return <TextArea label={`${label} (JSON)`} rows={5} defaultValue={JSON.stringify(value, null, 2)} onBlur={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* inchangé */ } }} />;
+ }
+ 
+-export default function Review({ repo, db, draft, path }: Props) {
++export default function Review({ repo, db, draft, path, onGoto }: Props) {
+   const [fiche, setFiche] = useState<Fiche | null>(null);
+   const [baseSha, setBaseSha] = useState<string | undefined>();
+   const [items, setItems] = useState<string[]>(parseChecklist(''));
+@@ -116,84 +118,109 @@ export default function Review({ repo, db, draft, path }: Props) {
+     } catch { setRawMsg('JSON invalide : impossible de l’appliquer'); }
+   };
+ 
+-  if (!draft && !path) return <div className="card">Choisis un brouillon dans Générer, ou une fiche dans la Bibliothèque (Modifier).</div>;
++  if (!draft && !path) return (
++    <Empty title="Rien à relire pour l’instant" action={onGoto && <div className="toolbar"><button className="btn" onClick={() => onGoto('Générer')}>Ouvrir un brouillon</button><button className="btn ghost" onClick={() => onGoto('Bibliothèque')}>Choisir une fiche</button></div>}>
++      Choisis un brouillon dans Générer, ou une fiche de la Bibliothèque avec « Modifier ».
++    </Empty>
++  );
+   if (!fiche) {
+     return (
+       <div className="card">
+-        {msg && <p role="alert">{msg}</p>}
++        {msg && <Notice kind="error">{msg}</Notice>}
+         {draft && (
+           <>
+             <p>Le dernier essai n'a pas produit de fiche valide. Corrige le JSON ci-dessous puis applique-le.</p>
+             {draft.problems.length > 0 && <ul>{draft.problems.map((p, i) => <li key={i}>{p.code} : {p.message}</li>)}</ul>}
+             <TextArea label="JSON de la fiche" rows={14} value={raw} onChange={(e) => setRaw(e.target.value)} />
+             <button className="btn" onClick={() => appliquerRaw(raw)}>Appliquer le JSON</button>
+-            {rawMsg && <p role="alert">{rawMsg}</p>}
++            {rawMsg && <Notice kind="error">{rawMsg}</Notice>}
+           </>
+         )}
+       </div>
+     );
+   }
+ 
+-  const etat = (ok: boolean) => (ok ? '✓' : '✗');
++  const nbCoches = checked.filter(Boolean).length;
++  const chk = (label: string, n: number) => <StatusBadge state={n === 0 ? 'ok' : 'failed'}>{label}</StatusBadge>;
++  const reste = !peutValider && !busy
++    ? bloquants > 0 ? `${bloquants} contrôle${bloquants > 1 ? 's' : ''} à corriger avant de valider.` : `Coche la checklist (${nbCoches} sur ${items.length}) pour valider.`
++    : '';
+   return (
+     <div>
+-      <div className="tabs-review" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
++      <div className="tabs-review" style={{ display: 'flex', marginBottom: 12 }}>
+         <button className="btn ghost" aria-pressed={tab === 'edit'} onClick={() => setTab('edit')}>Édition</button>
+         <button className="btn ghost" aria-pressed={tab === 'preview'} onClick={() => setTab('preview')}>Aperçu</button>
+       </div>
+-      <div className="card" style={{ marginBottom: 8 }}>
+-        Contrôles : schéma {etat(checks.schema.length === 0)} · lint {etat(checks.lint.length === 0)} · KaTeX {etat(checks.katex.length === 0)} · débordement {etat(checks.overflow.length === 0)}{checks.overflow.length > 0 && ` (pages ${checks.overflow.join(', ')})`}
+-        {[...checks.schema, ...checks.lint].map((p, i) => <div key={i} style={{ fontSize: 13 }}>{p.code} {p.path} : {p.message}</div>)}
+-        {checks.katex.map((m, i) => <div key={i} style={{ fontSize: 13 }}>katex : {m}</div>)}
++      <div className="card checks" role="status" aria-label="Résultat des contrôles">
++        {chk('Schéma', checks.schema.length)}
++        {chk('LaTeX', checks.lint.length)}
++        {chk('Formules', checks.katex.length)}
++        {chk(checks.overflow.length ? `Débordement, page ${checks.overflow.join(', ')}` : 'Mise en page', checks.overflow.length)}
++        {[...checks.schema, ...checks.lint].map((p, i) => <div key={i} className="detail">{p.path ? `${p.path} : ` : ''}{p.message}</div>)}
++        {checks.katex.map((m, i) => <div key={i} className="detail">Formule : {m}</div>)}
+       </div>
+       <div className="review">
+         <div className={`pane card${tab === 'edit' ? '' : ' hidden'}`}>
+           {fiche.pages.map((p, i) => (
+-            <div key={i} style={{ marginBottom: 16 }}>
+-              <h3>Page {i + 1}</h3>
++            <div key={i}>
++              <h3 className="page-title">Page {i + 1}</h3>
+               <FieldEditor label="Titre de la page" value={p.titre_page ?? ''} onChange={(v) => setFiche((f) => f && { ...f, pages: f.pages.map((q, qi) => (qi === i ? { ...q, titre_page: String(v) } : q)) })} />
+               {p.blocks.map((b: Block, j) => (
+-                <fieldset key={j} style={{ margin: '8px 0' }}>
++                <fieldset key={j}>
+                   <legend>{b.type}</legend>
+                   {Object.entries(b).filter(([k]) => k !== 'type').map(([k, v]) => <FieldEditor key={k} label={k} value={v} onChange={(nv) => updateBlock(i, j, k, nv)} />)}
+                 </fieldset>
+               ))}
+             </div>
+           ))}
+-          <details>
+-            <summary>JSON brut</summary>
++          <details className="adv json">
++            <summary>Modifier le JSON brut</summary>
+             <TextArea label="JSON brut" rows={12} defaultValue={JSON.stringify(fiche, null, 2)} key={JSON.stringify(fiche).length}
+               onBlur={(e) => appliquerRaw(e.target.value)} />
+-            {rawMsg && <p role="alert">{rawMsg}</p>}
++            {rawMsg && <Notice kind="error">{rawMsg}</Notice>}
+           </details>
+         </div>
+         <div className={`pane${tab === 'preview' ? '' : ' hidden'}`}>
+-          <div className="export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />
++          <div className="export-root previewbox" ref={preview} />
+         </div>
+       </div>
+-      <div className="card" style={{ marginTop: 8 }}>
+-        <p style={{ marginTop: 0 }}>Checklist de relecture</p>
+-        {items.map((it, i) => (
+-          <label key={it} style={{ display: 'block' }}>
+-            <input type="checkbox" checked={checked[i] ?? false} onChange={(e) => setChecked((c) => c.map((x, k) => (k === i ? e.target.checked : x)))} /> {it}
+-          </label>
+-        ))}
+-        <TextArea label="Consigne pour Gemini (par exemple : découpe la page 3)" rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+-        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+-          <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
+-          <AsyncButton className="btn" fx="shine" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider</AsyncButton>
++
++      {msg && <Notice kind={msg.startsWith('Fiche validée') || msg.startsWith('Correction') ? 'ok' : 'error'}>{msg}</Notice>}
++
++      <div className="card" style={{ marginTop: 20 }}>
++        <h2 className="h2" style={{ margin: '0 0 4px' }}>Avant de valider</h2>
++        <p className="progress-text">{nbCoches} sur {items.length} contrôle{items.length > 1 ? 's' : ''} fait{nbCoches > 1 ? 's' : ''}</p>
++        <div className="checklist">
++          {items.map((it, i) => (
++            <label key={it}>
++              <input type="checkbox" checked={checked[i] ?? false} onChange={(e) => setChecked((c) => c.map((x, k) => (k === i ? e.target.checked : x)))} />
++              <span>{it}</span>
++            </label>
++          ))}
+         </div>
+-        {!peutValider && <p style={{ fontSize: 13 }}>Valider s'active quand toutes les cases sont cochées et que schéma, lint et KaTeX sont au vert.</p>}
+-        {msg && <p role="status">{msg}</p>}
++        <TextArea label="Demander une correction à Gemini" hint="Par exemple : découpe la page 3 en deux." rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
++        <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
+       </div>
++
++      <div className="actionbar">
++        <div className="grow">{reste || (busy ? 'Un instant…' : <b>Prête à valider</b>)}</div>
++        <div className="btns">
++          <AsyncButton className="btn btn-lg" fx="shine" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider la fiche</AsyncButton>
++        </div>
++      </div>
++
+       {conflict !== null && (
+-        <div className="card" style={{ marginTop: 8 }}>
+-          <p>Cette fiche a changé ailleurs. Compare puis choisis.</p>
+-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+-            <div><b>Version distante</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{conflict}</pre></div>
+-            <div><b>Ma version</b><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{JSON.stringify(fiche, null, 2)}</pre></div>
++        <div className="card">
++          <h2 className="h2" style={{ margin: '0 0 8px' }}>Cette fiche a changé ailleurs</h2>
++          <p className="muted">Compare les deux versions, puis choisis laquelle garder.</p>
++          <div className="diff">
++            <div><b>Version sur GitHub</b><pre>{conflict}</pre></div>
++            <div><b>Ma version</b><pre>{JSON.stringify(fiche, null, 2)}</pre></div>
++          </div>
++          <div className="toolbar" style={{ marginTop: 16, marginBottom: 0 }}>
++            <button className="btn" onClick={() => void valider(true)}>Écraser avec ma version</button>
++            <button className="btn ghost" onClick={() => setConflict(null)}>Annuler</button>
+           </div>
+-          <button className="btn" onClick={() => void valider(true)}>Écraser</button> <button className="btn ghost" onClick={() => setConflict(null)}>Annuler</button>
+         </div>
+       )}
+     </div>
+diff --git a/src/ui/Settings.tsx b/src/ui/Settings.tsx
+index 31ca1a3..c313ac3 100644
+--- a/src/ui/Settings.tsx
++++ b/src/ui/Settings.tsx
+@@ -2,6 +2,7 @@ import { useState } from 'react';
+ import AsyncButton from './AsyncButton';
+ import { TextField } from './Field';
+ import ThemeSettings from './ThemeSettings';
++import { Notice, Section } from './kit';
+ import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
+ 
+ async function testGithub(s: S): Promise<string> {
+@@ -36,28 +37,44 @@ export default function Settings() {
+     <TextField label={label} type={secret ? 'password' : 'text'} autoComplete="off" value={s[k]} onChange={(e) => set(k, e.target.value)} />
+   );
+   const num = (k: 'maxPerMinute' | 'maxPerDay' | 'lotPages', label: string) => (
+-    <TextField label={label} type="number" min={1} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={s[k]} onChange={(e) => set(k, Math.max(1, Number(e.target.value) || 1))} />
++    <TextField label={label} type="number" min={1} inputMode="numeric" value={s[k]} onChange={(e) => set(k, Math.max(1, Number(e.target.value) || 1))} />
+   );
++  const ok = msg.endsWith('connecté');
+   return (
+     <>
+-    <div className="card">
+-      {text('geminiKey', 'Clé Gemini', true)}
+-      {text('githubToken', 'Jeton GitHub (limité au dépôt Fiches)', true)}
+-      {text('owner', 'Propriétaire du dépôt')}
+-      {text('repo', 'Nom du dépôt')}
+-      {text('model', 'Modèle Gemini')}
+-      {text('modelSecours', 'Modèle de secours (optionnel, utilisé si le principal est surchargé)')}
+-      {num('maxPerMinute', 'Requêtes par minute')}
+-      {num('maxPerDay', 'Requêtes par jour')}
+-      {num('lotPages', 'Pages par lot (import de cours)')}
+-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+-        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGithub(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion GitHub</AsyncButton>
+-        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGemini(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion Gemini</AsyncButton>
+-        <button className="btn ghost" onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
++      <div className="card">
++        <Section title="Connexions" hint="Ces valeurs restent sur cet appareil. Teste chaque connexion après l’avoir saisie.">
++          <div className="grid2">
++            {text('geminiKey', 'Clé Gemini', true)}
++            {text('githubToken', 'Jeton GitHub (limité au dépôt Fiches)', true)}
++            {text('owner', 'Propriétaire du dépôt')}
++            {text('repo', 'Nom du dépôt')}
++          </div>
++          <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
++            <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGithub(s); setMsg(r); return r.endsWith('connecté'); }}>Tester GitHub</AsyncButton>
++            <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGemini(s); setMsg(r); return r.endsWith('connecté'); }}>Tester Gemini</AsyncButton>
++            <span className="sp" />
++            <button className="btn ghost" onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
++          </div>
++          {msg && <Notice kind={ok ? 'ok' : msg === 'Clés effacées' ? 'info' : 'error'}>{msg}</Notice>}
++        </Section>
++
++        <Section title="Modèle" hint="Le modèle de secours ne sert que si le principal reste surchargé.">
++          <div className="grid2">
++            {text('model', 'Modèle Gemini')}
++            {text('modelSecours', 'Modèle de secours (optionnel)')}
++          </div>
++        </Section>
++
++        <Section title="Limites" hint="Elles évitent de dépasser ton quota Gemini.">
++          <div className="grid3">
++            {num('maxPerMinute', 'Requêtes par minute')}
++            {num('maxPerDay', 'Requêtes par jour')}
++            {num('lotPages', 'Pages par lot (cours)')}
++          </div>
++        </Section>
+       </div>
+-      {msg && <p role="status">{msg}</p>}
+-    </div>
+-    <ThemeSettings />
++      <ThemeSettings />
+     </>
+   );
+ }
+diff --git a/src/ui/ThemeSettings.tsx b/src/ui/ThemeSettings.tsx
+index 8cb7e20..23cdce6 100644
+--- a/src/ui/ThemeSettings.tsx
++++ b/src/ui/ThemeSettings.tsx
+@@ -1,4 +1,5 @@
+ import { useState } from 'react';
++import { Notice, Section } from './kit';
+ import { getSettings, saveSettings } from '../lib/storage/settings';
+ import { THEMES, contrastWarnings, effectiveTokens, resolveMode, type Mode, type ThemeId, type TokenName } from '../theme/themes';
+ 
+@@ -29,39 +30,35 @@ export default function ThemeSettings() {
+     update({ themeOverrides: { ...s.themeOverrides, [key]: cur } });
+   };
+   return (
+-    <div className="card" style={{ marginTop: 16 }}>
+-      <h2 className="titre" style={{ fontSize: 24 }}>Thème</h2>
+-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+-        {(Object.keys(THEMES) as ThemeId[]).map((id) => (
+-          <button key={id} aria-pressed={s.theme === id} onClick={() => update({ theme: id })}
+-            style={{ padding: 8, borderRadius: 12, border: '1px solid var(--card-border)', background: THEMES[id].light['--page-bg'], color: '#1B1B1B', outline: s.theme === id ? '2px solid var(--accent)' : 'none' }}>
+-            {THEMES[id].label}
+-          </button>
+-        ))}
+-      </div>
+-      <p style={{ marginBottom: 4 }}>Mode</p>
+-      <div style={{ display: 'flex', gap: 8 }}>
+-        {(['auto', 'clair', 'sombre'] as Mode[]).map((m) => (
+-          <button key={m} aria-pressed={s.mode === m} onClick={() => update({ mode: m })}
+-            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--card-border)', background: s.mode === m ? 'var(--accent)' : 'transparent', color: s.mode === m ? '#fff' : 'var(--text)' }}>
+-            {m === 'auto' ? 'Auto' : m === 'clair' ? 'Clair' : 'Sombre'}
+-          </button>
+-        ))}
+-      </div>
+-      <p style={{ marginBottom: 4 }}>Couleurs ({resolved === 'light' ? 'mode clair' : 'mode sombre'})</p>
+-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+-        {COULEURS.map((c) => (
+-          <label key={c.label}>
+-            {c.label}
+-            <input type="color" style={{ display: 'block' }} value={tokens[c.tokens[0]].startsWith('#') ? tokens[c.tokens[0]] : '#ffffff'}
+-              onChange={(e) => setColor(c.tokens, e.target.value.toUpperCase())} />
+-          </label>
+-        ))}
+-      </div>
+-      {warnings.length > 0 && (
+-        <p role="alert" style={{ color: 'var(--accent-text)' }}>Contraste faible : {warnings.map((w) => NOMS_FR[w] ?? w).join(', ')}</p>
+-      )}
+-      <button style={{ marginTop: 12 }} onClick={() => update({ themeOverrides: {} })}>Réinitialiser le thème</button>
++    <div className="card">
++      <Section title="Apparence" hint="Le thème change l’app, pas le rendu des fiches : elles gardent leur charte.">
++        <div className="swatches" role="group" aria-label="Thème">
++          {(Object.keys(THEMES) as ThemeId[]).map((id) => (
++            <button key={id} className="swatch" aria-pressed={s.theme === id} onClick={() => update({ theme: id })}>
++              <i style={{ backgroundColor: THEMES[id].light['--page-bg'], ...(THEMES[id].light['--grid-line'] !== 'transparent' ? { backgroundImage: `linear-gradient(to right, ${THEMES[id].light['--grid-line']} 1px, transparent 1px), linear-gradient(to bottom, ${THEMES[id].light['--grid-line']} 1px, transparent 1px)`, backgroundSize: '9px 9px' } : {}), ['--sw-accent' as string]: THEMES[id].light['--accent'] }} />
++              {THEMES[id].label}
++            </button>
++          ))}
++        </div>
++        <h3 style={{ margin: '24px 0 8px', fontSize: 15 }}>Mode</h3>
++        <div className="segmented" role="group" aria-label="Mode">
++          {(['auto', 'clair', 'sombre'] as Mode[]).map((m) => (
++            <button key={m} aria-pressed={s.mode === m} onClick={() => update({ mode: m })}>{m === 'auto' ? 'Auto' : m === 'clair' ? 'Clair' : 'Sombre'}</button>
++          ))}
++        </div>
++        <h3 style={{ margin: '24px 0 8px', fontSize: 15 }}>Couleurs <span className="muted" style={{ fontWeight: 400 }}>({resolved === 'light' ? 'mode clair' : 'mode sombre'})</span></h3>
++        <div className="colors">
++          {COULEURS.map((c) => (
++            <label key={c.label}>
++              {c.label}
++              <input type="color" value={tokens[c.tokens[0]].startsWith('#') ? tokens[c.tokens[0]] : '#ffffff'}
++                onChange={(e) => setColor(c.tokens, e.target.value.toUpperCase())} />
++            </label>
++          ))}
++        </div>
++        {warnings.length > 0 && <Notice kind="error">Contraste faible sur : {warnings.map((w) => NOMS_FR[w] ?? w).join(', ')}. Le texte pourrait être difficile à lire.</Notice>}
++        <div className="toolbar" style={{ marginTop: 20, marginBottom: 0 }}><button onClick={() => update({ themeOverrides: {} })}>Réinitialiser le thème</button></div>
++      </Section>
+     </div>
+   );
+ }
+diff --git a/src/ui/kit.tsx b/src/ui/kit.tsx
+new file mode 100644
+index 0000000..0ea731d
+--- /dev/null
++++ b/src/ui/kit.tsx
+@@ -0,0 +1,76 @@
++import type { ReactNode } from 'react';
++
++/** En-tête d'écran : un titre, une phrase qui dit à quoi sert l'écran. */
++export function PageHead({ title, lead }: { title: string; lead?: string }) {
++  return (
++    <header className="pagehead">
++      <h1 className="titre">{title}</h1>
++      {lead && <p className="lead">{lead}</p>}
++    </header>
++  );
++}
++
++/** Groupe de champs : un titre court, une aide optionnelle, puis le contenu. */
++export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
++  return (
++    <section className="group">
++      <div className="group-head">
++        <h2>{title}</h2>
++        {hint && <p>{hint}</p>}
++      </div>
++      {children}
++    </section>
++  );
++}
++
++type Kind = 'info' | 'ok' | 'error';
++const PATHS: Record<Kind, ReactNode> = {
++  info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.01" /></>,
++  ok: <path d="M5 13l4 4L19 7" />,
++  error: <><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17.5v.01" /></>,
++};
++
++/** Message d'état : l'icône et le texte portent le sens, la couleur le renforce. */
++export function Notice({ kind = 'info', children, action }: { kind?: Kind; children: ReactNode; action?: ReactNode }) {
++  return (
++    <div className="notice" data-k={kind} role={kind === 'error' ? 'alert' : 'status'}>
++      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{PATHS[kind]}</svg>
++      <div>{children}</div>
++      {action}
++    </div>
++  );
++}
++
++/** Écran vide : dit ce qui manque, puis propose l'action suivante. */
++export function Empty({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
++  return (
++    <div className="empty">
++      <b>{title}</b>
++      {children && <p>{children}</p>}
++      {action}
++    </div>
++  );
++}
++
++/** Étapes d'une génération : les tours déjà faits se remplissent, le tour en cours respire. */
++export function Stepper({ current, total, label }: { current: number; total: number; label: string }) {
++  return (
++    <div className="stepper" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={current} aria-label={label}>
++      {Array.from({ length: total }, (_, i) => (
++        <span key={i} data-s={i + 1 < current ? 'done' : i + 1 === current ? 'now' : 'todo'} />
++      ))}
++    </div>
++  );
++}
++
++/** Pastille de comptage de requêtes : « 12 / 250 » avec une jauge. */
++export function Quota({ used }: { used: string }) {
++  const [n, max] = used.split('/').map(Number);
++  const pct = max ? Math.min(100, Math.round((n / max) * 100)) : 0;
++  return (
++    <span className="quota" title="Requêtes envoyées à Gemini aujourd'hui">
++      <span className="quota-bar" aria-hidden="true"><i style={{ width: `${pct}%` }} data-hot={pct >= 80 ? '1' : undefined} /></span>
++      {used ? `${n} sur ${max} requêtes aujourd'hui` : ''}
++    </span>
++  );
++}

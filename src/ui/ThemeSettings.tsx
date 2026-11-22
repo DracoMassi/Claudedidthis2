@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Notice, Section } from './kit';
 import { getSettings, saveSettings } from '../lib/storage/settings';
 import { THEMES, contrastWarnings, effectiveTokens, resolveMode, type Mode, type ThemeId, type TokenName } from '../theme/themes';
 
@@ -29,39 +30,35 @@ export default function ThemeSettings() {
     update({ themeOverrides: { ...s.themeOverrides, [key]: cur } });
   };
   return (
-    <div className="card" style={{ marginTop: 16 }}>
-      <h2 className="titre" style={{ fontSize: 24 }}>Thème</h2>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {(Object.keys(THEMES) as ThemeId[]).map((id) => (
-          <button key={id} aria-pressed={s.theme === id} onClick={() => update({ theme: id })}
-            style={{ padding: 8, borderRadius: 12, border: '1px solid var(--card-border)', background: THEMES[id].light['--page-bg'], color: '#1B1B1B', outline: s.theme === id ? '2px solid var(--accent)' : 'none' }}>
-            {THEMES[id].label}
-          </button>
-        ))}
-      </div>
-      <p style={{ marginBottom: 4 }}>Mode</p>
-      <div style={{ display: 'flex', gap: 8 }}>
-        {(['auto', 'clair', 'sombre'] as Mode[]).map((m) => (
-          <button key={m} aria-pressed={s.mode === m} onClick={() => update({ mode: m })}
-            style={{ padding: '6px 12px', borderRadius: 999, border: '1px solid var(--card-border)', background: s.mode === m ? 'var(--accent)' : 'transparent', color: s.mode === m ? '#fff' : 'var(--text)' }}>
-            {m === 'auto' ? 'Auto' : m === 'clair' ? 'Clair' : 'Sombre'}
-          </button>
-        ))}
-      </div>
-      <p style={{ marginBottom: 4 }}>Couleurs ({resolved === 'light' ? 'mode clair' : 'mode sombre'})</p>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {COULEURS.map((c) => (
-          <label key={c.label}>
-            {c.label}
-            <input type="color" style={{ display: 'block' }} value={tokens[c.tokens[0]].startsWith('#') ? tokens[c.tokens[0]] : '#ffffff'}
-              onChange={(e) => setColor(c.tokens, e.target.value.toUpperCase())} />
-          </label>
-        ))}
-      </div>
-      {warnings.length > 0 && (
-        <p role="alert" style={{ color: 'var(--accent-text)' }}>Contraste faible : {warnings.map((w) => NOMS_FR[w] ?? w).join(', ')}</p>
-      )}
-      <button style={{ marginTop: 12 }} onClick={() => update({ themeOverrides: {} })}>Réinitialiser le thème</button>
+    <div className="card">
+      <Section title="Apparence" hint="Le thème change l’app, pas le rendu des fiches : elles gardent leur charte.">
+        <div className="swatches" role="group" aria-label="Thème">
+          {(Object.keys(THEMES) as ThemeId[]).map((id) => (
+            <button key={id} className="swatch" aria-pressed={s.theme === id} onClick={() => update({ theme: id })}>
+              <i style={{ backgroundColor: THEMES[id].light['--page-bg'], ...(THEMES[id].light['--grid-line'] !== 'transparent' ? { backgroundImage: `linear-gradient(to right, ${THEMES[id].light['--grid-line']} 1px, transparent 1px), linear-gradient(to bottom, ${THEMES[id].light['--grid-line']} 1px, transparent 1px)`, backgroundSize: '9px 9px' } : {}), ['--sw-accent' as string]: THEMES[id].light['--accent'] }} />
+              {THEMES[id].label}
+            </button>
+          ))}
+        </div>
+        <h3 style={{ margin: '24px 0 8px', fontSize: 15 }}>Mode</h3>
+        <div className="segmented" role="group" aria-label="Mode">
+          {(['auto', 'clair', 'sombre'] as Mode[]).map((m) => (
+            <button key={m} aria-pressed={s.mode === m} onClick={() => update({ mode: m })}>{m === 'auto' ? 'Auto' : m === 'clair' ? 'Clair' : 'Sombre'}</button>
+          ))}
+        </div>
+        <h3 style={{ margin: '24px 0 8px', fontSize: 15 }}>Couleurs <span className="muted" style={{ fontWeight: 400 }}>({resolved === 'light' ? 'mode clair' : 'mode sombre'})</span></h3>
+        <div className="colors">
+          {COULEURS.map((c) => (
+            <label key={c.label}>
+              {c.label}
+              <input type="color" value={tokens[c.tokens[0]].startsWith('#') ? tokens[c.tokens[0]] : '#ffffff'}
+                onChange={(e) => setColor(c.tokens, e.target.value.toUpperCase())} />
+            </label>
+          ))}
+        </div>
+        {warnings.length > 0 && <Notice kind="error">Contraste faible sur : {warnings.map((w) => NOMS_FR[w] ?? w).join(', ')}. Le texte pourrait être difficile à lire.</Notice>}
+        <div className="toolbar" style={{ marginTop: 20, marginBottom: 0 }}><button onClick={() => update({ themeOverrides: {} })}>Réinitialiser le thème</button></div>
+      </Section>
     </div>
   );
 }

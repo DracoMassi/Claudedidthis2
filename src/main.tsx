@@ -4,6 +4,7 @@ import '@fontsource-variable/inter';
 import 'katex/dist/katex.min.css';
 import './theme/theme.css';
 import './theme/apple.css';
+import './theme/design.css';
 import App from './App';
 import { getSettings } from './lib/storage/settings';
 import { GithubRepo } from './lib/github/repo';

@@ -19,6 +19,7 @@ import type { Problem } from '../lib/types';
 import { TextArea, SelectField, TextField } from './Field';
 import { FxButton } from './fx';
 import { messageFor } from './messages';
+import { Empty, Notice, Quota, Section } from './kit';
 import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -188,39 +189,40 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
   };
 
   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
-  if (!db) return <div className="card">Chargement…</div>;
+  if (!db) return <div className="card muted">Chargement…</div>;
 
   if (view) {
     return (
       <div>
-        <div className="card" style={{ marginBottom: 8 }}>
+        <div className="card">
+          <div className="grid2">
           <SelectField label="Matière" value={view.meta.matiere} onChange={(e) => setView({ ...view, meta: { ...view.meta, matiere: e.target.value } })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
           <TextField label="Chapitre" value={view.meta.chapitre} onChange={(e) => setView({ ...view, meta: { ...view.meta, chapitre: e.target.value } })} />
-          <div style={{ marginTop: 8 }}>
-            {problems.length === 0 ? 'Contrôles : tout est au vert' : <ul style={{ margin: 0 }}>{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul>}
           </div>
+          {problems.length === 0 ? <Notice kind="ok">Tous les contrôles sont au vert.</Notice> : <Notice kind="error"><ul style={{ margin: 0, paddingLeft: 18 }}>{problems.map((p, i) => <li key={i}>{p.message}</li>)}</ul></Notice>}
         </div>
         <div className="review">
           <div className="pane card">
-            <b>Page source</b>
-            {total > 0 && <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Précédente</button><span>{page} / {total}</span><button disabled={page >= total} onClick={() => setPage(page + 1)}>Suivante</button></div>}
+            <h3 className="page-title" style={{ marginTop: 0 }}>Page source</h3>
+            {total > 0 && <div className="toolbar"><button disabled={page <= 1} onClick={() => setPage(page - 1)}>Précédente</button><span className="muted" aria-live="polite">Page {page} sur {total}</span><button disabled={page >= total} onClick={() => setPage(page + 1)}>Suivante</button></div>}
             {imgUrl ? <img src={imgUrl} alt={`Page ${page}`} style={{ maxWidth: '100%' }} /> : lotOf ? <canvas ref={canvas} style={{ maxWidth: '100%' }} /> : <p>Pas de page source (texte importé tel quel).</p>}
           </div>
           <div className="pane card">
-            <b>Rendu</b>
+            <h3 className="page-title" style={{ marginTop: 0 }}>Rendu</h3>
             <div ref={preview} style={{ maxHeight: 420, overflow: 'auto' }} />
           </div>
         </div>
-        <div className="card" style={{ marginTop: 8 }}>
+        <div className="card">
           <TextArea label="Texte du cours (Markdown)" rows={12} value={view.md} onChange={(e) => setView({ ...view, md: e.target.value })} />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-            <button disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer (à vérifier)</button>
-            <FxButton fx="shine" className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours (vérifié)</FxButton>
-            <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
+          <div className="toolbar" style={{ marginTop: 12, marginBottom: 0 }}>
+            <FxButton fx="shine" className="btn" disabled={busy || !repo || !view.meta.chapitre.trim() || problems.some((p) => p.code === 'katex')} onClick={() => void save('verifie')}>Valider le cours</FxButton>
+            <button className="btn ghost" disabled={busy || !repo || !view.meta.chapitre.trim()} onClick={() => void save('a_verifier')}>Enregistrer sans valider</button>
+            <span className="sp" />
             {conflict && <button onClick={() => void save(conflict, true)}>Écraser le cours existant</button>}
+            <button onClick={() => { setView(null); setLots([]); }}>Fermer</button>
           </div>
-          {!repo && <p>Ajoute ton jeton GitHub dans Réglages pour enregistrer.</p>}
-          {msg && <p role="status">{msg}</p>}
+          {!repo && <Notice>Ajoute ton jeton GitHub dans Réglages pour enregistrer.</Notice>}
+          {msg && <Notice kind={msg.startsWith('Cours enregistré') || msg.includes('enregistré') ? 'ok' : 'info'}>{msg}</Notice>}
         </div>
       </div>
     );
@@ -229,28 +231,58 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
   return (
     <div>
       <div className="card">
-        <SelectField label="Matière" value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
-        <SelectField label="Niveau" value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></SelectField>
-        <TextField label="Chapitre" value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} />
-        <label style={{ display: 'block', marginTop: 8 }}>Choisir dans Fichiers (PDF, images, .md, .tex, .txt) <input type="file" multiple accept="application/pdf,image/*,.md,.tex,.txt" onChange={(e) => void onFiles(e.target.files)} /></label>
-        <label style={{ display: 'block', marginTop: 8 }}>Appareil photo <input type="file" accept="image/*" capture="environment" onChange={(e) => void onFiles(e.target.files)} /></label>
-        <TextArea label="Ou coller du texte" rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} />
-        <button disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
-        <p>Requêtes aujourd'hui : {used}</p>
+        <Section title="Quel cours ?">
+          <div className="grid3">
+            <SelectField label="Matière" value={meta.matiere} onChange={(e) => setMeta({ ...meta, matiere: e.target.value })}>{MATIERES.map((m) => <option key={m}>{m}</option>)}</SelectField>
+            <SelectField label="Niveau" value={meta.niveau} onChange={(e) => setMeta({ ...meta, niveau: e.target.value })}><option>mpsi</option><option>terminale</option></SelectField>
+            <TextField label="Chapitre" value={meta.chapitre} onChange={(e) => setMeta({ ...meta, chapitre: e.target.value })} />
+          </div>
+        </Section>
+        <Section title="D’où vient-il ?" hint="PDF, photos ou fichiers texte sont découpés en lots, transcrits puis contrôlés.">
+          <div className="drop-row">
+            <label className="drop">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>
+              <div><b>Choisir dans Fichiers</b><span>PDF, images, .md, .tex, .txt</span></div>
+              <input type="file" multiple accept="application/pdf,image/*,.md,.tex,.txt" onChange={(e) => void onFiles(e.target.files)} />
+            </label>
+            <label className="drop">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+              <div><b>Prendre une photo</b><span>Appareil photo de l’iPad</span></div>
+              <input type="file" accept="image/*" capture="environment" onChange={(e) => void onFiles(e.target.files)} />
+            </label>
+          </div>
+          <TextArea label="Ou coller du texte" rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} />
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <button className="btn" disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
+            <span className="sp" />
+            <Quota used={used} />
+          </div>
+        </Section>
       </div>
-      {msg && <p role="status">{msg}</p>}
-      <h2 className="titre" style={{ fontSize: 24 }}>Imports en cours</h2>
-      {rows.length === 0 && <div className="card">Aucun import.</div>}
-      {live && <p role="status" aria-live="polite">{live}</p>}
+      {msg && <Notice kind={/impossible|refus|échec|erreur/i.test(msg) ? 'error' : 'info'}>{msg}</Notice>}
+      <h2 className="h2">Imports en cours <small>{rows.length > 0 ? `${rows.length}` : ''}</small></h2>
+      {rows.length === 0 && <Empty title="Aucun import">Dépose un PDF ou des photos ci-dessus : la progression de chaque lot s’affichera ici.</Empty>}
+      {live && <p role="status" aria-live="polite" className="muted">{live}</p>}
+      <ul className="rows">
       {rows.map((r) => {
         const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
         const ok = r.lots.filter((l) => l.state === 'ok').length;
         const stateOf = (l: LotInfo, i: number) => (runningId === r.id && i === r.done && l.state === 'pending' ? 'running' as const : l.state);
         return (
-          <div key={r.id} className="card" style={{ marginBottom: 8 }}>
-            <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
+          <li key={r.id} className="card" style={{ marginBottom: 0 }}>
+            <div className="rowcard" style={{ padding: 0, background: 'transparent', border: 0 }}>
+              <div className="what">
+                <b>{r.meta?.chapitre ?? r.id}</b>
+                <small>{r.meta?.source} · {r.done} sur {r.total} lots</small>
+              </div>
+              <div className="acts">
+                <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+                <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
+                <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
+              </div>
+            </div>
             <SegmentBar label={`${r.done} lots traités sur ${r.total}, ${bad} à contrôler`} segments={r.lots.map((l, i) => ({ state: stateOf(l, i), title: `Lot ${i + 1}` }))} />
-            <details open={bad > 0}>
+            <details className="adv" style={{ marginTop: 8, paddingTop: 8 }} open={bad > 0}>
               <summary>{ok} lot{ok > 1 ? 's' : ''} vérifié{ok > 1 ? 's' : ''}{bad > 0 ? `, ${bad} à contrôler` : ''}</summary>
               <ul className="lots">
                 {r.lots.map((l, i) => (
@@ -258,19 +290,15 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
                     <StatusBadge state={stateOf(l, i)} />
                     <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
                     <span className="note">{describeLot(l)}</span>
-                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
+                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
                   </li>
                 ))}
               </ul>
             </details>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-              <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
-              <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
-              <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
-            </div>
-          </div>
+          </li>
         );
       })}
+      </ul>
       <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
     </div>
   );
