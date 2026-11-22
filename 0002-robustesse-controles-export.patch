@@ -1,0 +1,2233 @@
+From 4daae2be832edcdba9bc581ab65525494d290b2a Mon Sep 17 00:00:00 2001
+From: Sequentia <dev@example.com>
+Date: Sun, 22 Nov 2026 10:41:48 +0000
+Subject: [PATCH] =?UTF-8?q?Robustesse=20Gemini=20(reprises,=20secours),=20?=
+ =?UTF-8?q?contr=C3=B4le=20des=20imports,=20export=20PDF=20v=C3=A9rifi?=
+ =?UTF-8?q?=C3=A9,=20=C3=A9tats=20visibles?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .github/workflows/ci.yml                      |   1 +
+ ...ns-AsyncButton-tats-de-boutons-champ.patch | 532 ------------------
+ README.md                                     |  12 +
+ src/lib/cours/checks.ts                       |   2 +
+ src/lib/cours/queue.ts                        |  91 ++-
+ src/lib/cours/transcribe.ts                   |  20 +
+ src/lib/cours/verify.ts                       | 119 ++++
+ src/lib/errors.ts                             |  23 +-
+ src/lib/export/pdf.ts                         |   8 +-
+ src/lib/export/pdfBuild.ts                    |  73 +++
+ src/lib/gemini/budget.ts                      |   2 +
+ src/lib/gemini/client.ts                      |  52 +-
+ src/lib/gemini/journal.ts                     |  25 +
+ src/lib/gemini/retry.ts                       |  96 ++++
+ src/lib/gemini/robust.ts                      |  35 ++
+ src/lib/storage/settings.ts                   |   3 +-
+ src/theme/apple.css                           |  26 +
+ src/ui/Cours.tsx                              | 110 +++-
+ src/ui/Generate.tsx                           |   8 +-
+ src/ui/Library.tsx                            |  31 +-
+ src/ui/Settings.tsx                           |   3 +-
+ src/ui/geminiDeps.ts                          |  17 +-
+ src/ui/messages.ts                            |   5 +-
+ src/ui/status.tsx                             |  64 +++
+ tests/gemini2.test.ts                         |  86 +++
+ tests/pdfbuild.test.ts                        |  38 ++
+ tests/queue2.test.ts                          |  92 +++
+ tests/retry.test.ts                           |  77 +++
+ tests/verify.test.ts                          |  72 +++
+ 29 files changed, 1120 insertions(+), 603 deletions(-)
+ delete mode 100644 0001-Micro-interactions-AsyncButton-tats-de-boutons-champ.patch
+ create mode 100644 src/lib/cours/verify.ts
+ create mode 100644 src/lib/export/pdfBuild.ts
+ create mode 100644 src/lib/gemini/journal.ts
+ create mode 100644 src/lib/gemini/retry.ts
+ create mode 100644 src/lib/gemini/robust.ts
+ create mode 100644 src/ui/status.tsx
+ create mode 100644 tests/gemini2.test.ts
+ create mode 100644 tests/pdfbuild.test.ts
+ create mode 100644 tests/queue2.test.ts
+ create mode 100644 tests/retry.test.ts
+ create mode 100644 tests/verify.test.ts
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 65419f6..b75facd 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -9,3 +9,4 @@ jobs:
+         with: { node-version: 22, cache: npm }
+       - run: npm ci
+       - run: npm test
++      - run: npm run build
+diff --git a/0001-Micro-interactions-AsyncButton-tats-de-boutons-champ.patch b/0001-Micro-interactions-AsyncButton-tats-de-boutons-champ.patch
+deleted file mode 100644
+index c188669..0000000
+--- a/0001-Micro-interactions-AsyncButton-tats-de-boutons-champ.patch
++++ /dev/null
+@@ -1,532 +0,0 @@
+-From 09028aeac32a5c41693442b28049496ec62a4e4e Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Thu, 29 Oct 2026 18:28:55 +0000
+-Subject: [PATCH] =?UTF-8?q?Micro-interactions=20:=20AsyncButton,=20=C3=A9t?=
+- =?UTF-8?q?ats=20de=20boutons,=20champs,=20correctif=20de=20priorit=C3=A9?=
+- =?UTF-8?q?=20CSS?=
+-MIME-Version: 1.0
+-Content-Type: text/plain; charset=UTF-8
+-Content-Transfer-Encoding: 8bit
+-
+----
+- src/theme/apple.css    | 130 ++++++++++++++++++++++++++-------------
+- src/ui/AsyncButton.tsx |  61 ++++++++++++++++++
+- src/ui/Library.tsx     |  35 ++++++-----
+- src/ui/Review.tsx      |   9 ++-
+- src/ui/Settings.tsx    |   5 +-
+- src/ui/glass.css       | 136 -----------------------------------------
+- 6 files changed, 178 insertions(+), 198 deletions(-)
+- create mode 100644 src/ui/AsyncButton.tsx
+- delete mode 100644 src/ui/glass.css
+-
+-diff --git a/src/theme/apple.css b/src/theme/apple.css
+-index cd12266..32042e5 100644
+---- a/src/theme/apple.css
+-+++ b/src/theme/apple.css
+-@@ -1,33 +1,64 @@
+--/* Séquentia — DA inspirée d'Apple : clarté, déférence au contenu, ombres très douces,
+--   typographie dominante, mouvement discret. Chargée APRÈS theme.css.
+--   Aucune couleur en dur côté app : tout dérive des variables du thème (--card, --accent,
+--   --page-bg…), donc les préréglages, le mode Auto/Clair/Sombre et les couleurs perso marchent. */
+-+/* Séquentia — DA inspirée d'Apple + micro-interactions.
+-+   Chargée APRÈS theme.css. Aucune couleur de marque en dur : tout dérive des variables du
+-+   thème (--card, --accent, --page-bg…). Seuls --success et --danger sont fixes (états). */
+- 
+- :root {
+-+  /* Mouvement : tout est centralisé ici */
+-   --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
+-+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+-+  --dur-instant: 100ms;  /* press */
+-+  --dur-fast: 180ms;     /* hover, focus */
+-+  --dur-base: 280ms;     /* apparition d'un libellé, erreur */
+-+
+-   --shadow-sm: 0 2px 8px rgba(0, 0, 0, .04);
+-   --shadow-md: 0 8px 30px rgba(0, 0, 0, .08);
+-   --sep: rgba(0, 0, 0, .08);
+-   --r-card: 24px;
+--  --r-field: 12px;
+--  --r-pill: 980px;
+-+  --r-field: 14px;
+-+  --r-pill: 9999px;
+-   --focus: color-mix(in srgb, var(--accent) 40%, transparent);
+-+  --success: #1f8a3b;
+-+  --danger: #d70015;
+-+  --tint: color-mix(in srgb, var(--accent) 9%, transparent);
+-+  --tint-hover: color-mix(in srgb, var(--accent) 15%, transparent);
+- }
+--:root[data-mode="dark"] { --sep: rgba(255, 255, 255, .08); --shadow-sm: none; --shadow-md: none; }
+-+:root[data-mode="dark"] { --sep: rgba(255, 255, 255, .08); --shadow-sm: none; --shadow-md: none; --success: #30d158; --danger: #ff6961; }
+- 
+--/* Typographie : corps 17px, interlettrage serré */
+-+/* Typographie */
+- .app { max-width: 1200px; margin: 0 auto; padding-left: 22px; padding-right: 22px;
+-   font-size: 17px; line-height: 1.47; letter-spacing: -0.022em; -webkit-font-smoothing: antialiased; }
+- @media (min-width: 768px) { .app { padding-left: 40px; padding-right: 40px; } }
+- p { text-wrap: pretty; }
+--small, .badge { letter-spacing: -0.01em; }
+--
+- .logo { font-size: 24px; padding: 18px 0 4px; }
+--.titre { font-size: clamp(36px, 6vw, 56px); font-weight: 400; line-height: 1.07; letter-spacing: -0.03em;
+--  margin: 28px 0 24px; text-wrap: balance; }
+-+.titre { font-size: clamp(36px, 6vw, 56px); font-weight: 400; line-height: 1.07; letter-spacing: -0.03em; margin: 28px 0 24px; text-wrap: balance; }
+- h3 { font-family: var(--font-section); font-weight: 600; letter-spacing: -0.02em; line-height: 1.14; }
+- 
+--/* Navigation : 44px, sticky, translucide */
+-+/* Cartes */
+-+.card { border: 0; border-radius: var(--r-card); padding: 20px 24px; box-shadow: var(--shadow-sm); }
+-+:root[data-mode="dark"] .card { border: 1px solid var(--sep); }
+-+.lift { transition: transform var(--dur-base) var(--ease-apple), box-shadow var(--dur-base) var(--ease-apple); }
+-+.lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+-+
+-+/* ───────── Boutons ─────────
+-+   Spécificité volontairement basse (0,0,1) pour la base : .btn, .ghost, [aria-pressed] la dominent.
+-+   États : défaut · hover (luminosité) · focus-visible · press (scale .97) · disabled · loading/success/error. */
+-+button {
+-+  --b: var(--tint); --f: var(--accent-text);
+-+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+-+  font: inherit; font-size: 16px; font-weight: 400; letter-spacing: -0.016em; line-height: 1;
+-+  min-height: 44px; padding: 0 22px; border: 0; border-radius: var(--r-pill);
+-+  background: var(--b); color: var(--f); cursor: pointer;
+-+  user-select: none; -webkit-tap-highlight-color: transparent;
+-+  transition: transform var(--dur-instant) var(--ease-apple), filter var(--dur-fast) var(--ease-apple),
+-+              background-color var(--dur-fast) var(--ease-apple), color var(--dur-fast) var(--ease-apple);
+-+}
+-+button:where(:hover:not(:disabled)) { --b: var(--tint-hover); filter: brightness(1.08); }
+-+button:where(:active:not(:disabled)) { transform: scale(.97); filter: brightness(.92); }
+-+button:disabled { opacity: .4; cursor: not-allowed; }
+-+.btn, button[aria-pressed="true"] { --b: var(--accent); --f: #fff; font-weight: 600; }
+-+.btn.ghost:not([aria-pressed="true"]) { --b: var(--tint); --f: var(--accent-text); font-weight: 400; }
+-+
+-+/* Navigation : 44px, sticky, translucide (ses boutons sont des liens, pas des CTA) */
+- .nav {
+-   position: sticky; top: 0; z-index: 20; align-items: center; gap: 2px; flex-wrap: nowrap; overflow-x: auto;
+-   height: 44px; margin: 0 -22px; padding: 0 18px;
+-@@ -36,46 +67,63 @@ h3 { font-family: var(--font-section); font-weight: 600; letter-spacing: -0.02em
+-   border-bottom: 1px solid var(--sep);
+- }
+- @media (min-width: 768px) { .nav { margin: 0 -40px; padding: 0 36px; } }
+--.nav button { padding: 6px 14px; font-size: 14px; font-weight: 400; letter-spacing: -0.016em; white-space: nowrap;
+--  transition: background .2s var(--ease-apple), color .2s var(--ease-apple); }
+--.nav button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+--.nav button[aria-current="page"] { font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); }
+-+.nav button { --b: transparent; --f: var(--text); min-height: 0; height: 32px; padding: 0 14px; font-size: 14px; letter-spacing: -0.016em; white-space: nowrap; }
+-+.nav button:hover { --b: color-mix(in srgb, var(--accent) 8%, transparent); filter: none; }
+-+.nav button:active { transform: none; filter: none; }
+-+.nav button[aria-current="page"] { --b: color-mix(in srgb, var(--accent) 12%, transparent); --f: var(--accent-text); font-weight: 600; }
+- 
+--/* Cartes : sans bordure, ombre quasi invisible (en sombre : bordure fine, pas d'ombre) */
+--.card { border: 0; border-radius: var(--r-card); padding: 20px 24px; box-shadow: var(--shadow-sm); }
+--:root[data-mode="dark"] .card { border: 1px solid var(--sep); }
+--.lift { transition: transform .25s var(--ease-apple), box-shadow .25s var(--ease-apple); }
+--.lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+-+/* Contrôle segmenté (onglets Édition / Aperçu) */
+-+.tabs-review { gap: 0 !important; padding: 3px; width: fit-content; border-radius: var(--r-pill); background: color-mix(in srgb, var(--text) 7%, transparent); }
+-+.tabs-review button.btn.ghost { --b: transparent; --f: var(--text); min-height: 36px; padding: 0 18px; font-weight: 400; }
+-+.tabs-review button.btn.ghost[aria-pressed="true"] { --b: var(--card); --f: var(--text); font-weight: 600; box-shadow: var(--shadow-sm); }
+- 
+--/* Boutons : secondaire par défaut (teinte douce) ; .btn = primaire plein */
+--button:not(.nav button) {
+--  font: inherit; font-size: 15px; font-weight: 400; letter-spacing: -0.016em; color: var(--accent-text);
+--  min-height: 44px; padding: 10px 20px; cursor: pointer; border: 0; border-radius: var(--r-pill);
+--  background: color-mix(in srgb, var(--accent) 9%, transparent);
+--  transition: opacity .2s var(--ease-apple), background .2s var(--ease-apple);
+--}
+--button:not(.nav button):hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+--button:not(.nav button):disabled { opacity: .4; cursor: not-allowed; }
+--.btn, button[aria-pressed="true"]:not(.nav button) { background: var(--accent); color: #fff; font-weight: 600; }
+--.btn:hover:not(:disabled), button[aria-pressed="true"]:not(.nav button):hover:not(:disabled) { background: var(--accent); opacity: .88; }
+--.btn:active:not(:disabled) { opacity: .75; }
+-+/* États asynchrones (AsyncButton) : largeur stable, libellé qui apparaît, coche dessinée, shake */
+-+.async-label { display: inline-flex; align-items: center; gap: 8px; animation: label-in var(--dur-base) var(--ease-apple) both; }
+-+.async[data-state="loading"] { cursor: progress; }
+-+.async[data-state="success"] { --b: var(--success) !important; --f: #fff !important; }
+-+.async[data-state="error"] { --b: var(--danger) !important; --f: #fff !important; animation: shake .4s var(--ease-apple); }
+-+.spin { animation: spin .8s linear infinite; }
+-+.check path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw .35s var(--ease-out-expo) .05s forwards; }
+-+@keyframes label-in { from { opacity: 0; transform: translateY(8px); } }
+-+@keyframes spin { to { transform: rotate(360deg); } }
+-+@keyframes draw { to { stroke-dashoffset: 0; } }
+-+@keyframes shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(4px); } }
+-+@keyframes pulse { 50% { opacity: .35; } }
+- 
+--/* Champs */
+--input:not([type="checkbox"]):not([type="file"]), select, textarea {
+--  font: inherit; font-size: 16px; letter-spacing: -0.01em; color: var(--text); min-height: 44px;
+--  background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid transparent; border-radius: var(--r-field);
+--  transition: border-color .2s var(--ease-apple), box-shadow .2s var(--ease-apple);
+-+/* ───────── Champs ───────── */
+-+input:not([type="checkbox"]):not([type="file"]):not([type="color"]), select, textarea {
+-+  font: inherit; font-size: 16px; letter-spacing: -0.01em; color: var(--text); min-height: 56px;
+-+  background: color-mix(in srgb, var(--text) 5%, transparent); border: 1.5px solid transparent; border-radius: var(--r-field);
+-+  transition: border-color var(--dur-fast) var(--ease-apple), background-color var(--dur-fast) var(--ease-apple), box-shadow var(--dur-fast) var(--ease-apple);
+- }
+- textarea { min-height: 0; }
+--input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+-+input:not([type="checkbox"]):not([type="file"]):not([type="color"]):hover, select:hover, textarea:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+-+input:focus, select:focus, textarea:focus { outline: none; background: var(--card); border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+-+[aria-invalid="true"] { border-color: var(--danger) !important; box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 12%, transparent); }
+- fieldset { border: 1px solid var(--sep); border-radius: 16px; }
+- :focus-visible { outline: 4px solid var(--focus); outline-offset: 2px; }
+- .nav button:focus-visible { outline-offset: -2px; }
+- 
+-+/* Case à cocher : cercle, coche blanche, léger rebond au press */
+-+input[type="checkbox"] {
+-+  -webkit-appearance: none; appearance: none; width: 24px; height: 24px; margin: 0 10px 0 0; vertical-align: -6px; cursor: pointer;
+-+  border: 1.5px solid color-mix(in srgb, var(--text) 35%, transparent); border-radius: 50%;
+-+  background: transparent center / 14px no-repeat;
+-+  transition: background-color var(--dur-fast) var(--ease-apple), border-color var(--dur-fast) var(--ease-apple), transform var(--dur-instant) var(--ease-apple);
+-+}
+-+input[type="checkbox"]:checked {
+-+  background-color: var(--accent); border-color: var(--accent);
+-+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+-+}
+-+input[type="checkbox"]:active { transform: scale(.88); }
+-+
+- /* Les fiches gardent leur charte : on annule l'interlettrage et l'interligne hérités de .app */
+- [data-fiche] { font-size: 16px; line-height: normal; letter-spacing: normal; }
+- 
+-+/* Réduction des animations : plus de mouvement, mais les états (erreur, succès) restent visibles */
+- @media (prefers-reduced-motion: reduce) {
+--  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+-+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+-+  .async .spin { animation: pulse 1.2s ease-in-out infinite !important; animation-duration: 1.2s !important; animation-iteration-count: infinite !important; }
+-+  .check path { stroke-dashoffset: 0; }
+- }
+- @media print { .nav { display: none !important; } .card { box-shadow: none !important; } }
+-diff --git a/src/ui/AsyncButton.tsx b/src/ui/AsyncButton.tsx
+-new file mode 100644
+-index 0000000..3684c55
+---- /dev/null
+-+++ b/src/ui/AsyncButton.tsx
+-@@ -0,0 +1,61 @@
+-+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+-+
+-+type State = 'idle' | 'loading' | 'success' | 'error';
+-+type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'children'> & {
+-+  /** Action asynchrone. `false` ou une exception = échec ; tout le reste = succès. */
+-+  run: () => Promise<boolean | void>;
+-+  children: ReactNode;
+-+  successLabel?: string;
+-+  errorLabel?: string;
+-+};
+-+
+-+function Spinner() {
+-+  return (
+-+    <svg className="spin" width="20" height="20" viewBox="0 0 24 24" role="img" aria-label="Chargement">
+-+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeOpacity=".25" strokeWidth="3" />
+-+      <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+-+    </svg>
+-+  );
+-+}
+-+function Check() {
+-+  return (
+-+    <svg className="check" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+-+      <path d="M5 13l4 4L19 7" pathLength={1} />
+-+    </svg>
+-+  );
+-+}
+-+
+-+/** Bouton à états idle → loading → success | error. La largeur reste stable entre les états. */
+-+export default function AsyncButton({ run, children, successLabel = 'Terminé', errorLabel = 'Réessayer', className = '', ...rest }: Props) {
+-+  const [state, setState] = useState<State>('idle');
+-+  const [width, setWidth] = useState<number | undefined>();
+-+  const ref = useRef<HTMLButtonElement>(null);
+-+  const timer = useRef<number | undefined>(undefined);
+-+  useEffect(() => () => window.clearTimeout(timer.current), []);
+-+
+-+  const click = async () => {
+-+    if (state === 'loading') return;
+-+    window.clearTimeout(timer.current);
+-+    setWidth(ref.current?.offsetWidth);
+-+    setState('loading');
+-+    const t0 = Date.now();
+-+    let ok = true;
+-+    try { ok = (await run()) !== false; } catch { ok = false; }
+-+    const reste = 400 - (Date.now() - t0); // évite le flash du spinner
+-+    if (reste > 0) await new Promise((r) => setTimeout(r, reste));
+-+    setState(ok ? 'success' : 'error');
+-+    timer.current = window.setTimeout(() => { setState('idle'); setWidth(undefined); }, ok ? 1600 : 2200);
+-+  };
+-+
+-+  return (
+-+    <button ref={ref} {...rest} className={`${className} async`.trim()} data-state={state} aria-busy={state === 'loading'}
+-+      style={{ ...rest.style, minWidth: width }} onClick={() => void click()}>
+-+      <span className="async-label" key={state}>
+-+        {state === 'loading' && <Spinner />}
+-+        {state === 'success' && <><Check />{successLabel}</>}
+-+        {state === 'error' && errorLabel}
+-+        {state === 'idle' && children}
+-+      </span>
+-+    </button>
+-+  );
+-+}
+-diff --git a/src/ui/Library.tsx b/src/ui/Library.tsx
+-index e9cc609..6a631db 100644
+---- a/src/ui/Library.tsx
+-+++ b/src/ui/Library.tsx
+-@@ -1,4 +1,5 @@
+- import { useEffect, useMemo, useRef, useState } from 'react';
+-+import AsyncButton from './AsyncButton';
+- import { printPages } from '../lib/export/pdf';
+- import { exportPng, isLikelyBlank } from '../lib/export/png';
+- import type { GithubRepo } from '../lib/github/repo';
+-@@ -42,6 +43,23 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+- 
+-   useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
+- 
+-+  const exporterPng = async (): Promise<boolean> => {
+-+    if (!sel) return false;
+-+    const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+-+    try {
+-+      const blobs = await exportPng(pages);
+-+      if (blobs.some(isLikelyBlank)) { setMsg("L'image semble vide. Utilise l'export PDF"); return false; }
+-+      blobs.forEach((b, n) => {
+-+        const a = document.createElement('a');
+-+        a.href = URL.createObjectURL(b);
+-+        a.download = `${sel.slug}-${n + 1}.png`;
+-+        a.click();
+-+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+-+      });
+-+      return true;
+-+    } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); return false; }
+-+  };
+-+
+-   if (!repo) return <div className="card">Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages.</div>;
+- 
+-   return (
+-@@ -69,22 +87,7 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+-         <div className="card" style={{ marginTop: 12 }}>
+-           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+-             {fiche && <button className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</button>}
+--            {fiche && (
+--              <button className="btn ghost" onClick={async () => {
+--                const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+--                try {
+--                  const blobs = await exportPng(pages);
+--                  if (blobs.some(isLikelyBlank)) { setMsg("L'image semble vide. Utilise l'export PDF"); return; }
+--                  blobs.forEach((b, n) => {
+--                    const a = document.createElement('a');
+--                    a.href = URL.createObjectURL(b);
+--                    a.download = `${sel.slug}-${n + 1}.png`;
+--                    a.click();
+--                    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+--                  });
+--                } catch { setMsg("L'export PNG a échoué. Utilise l'export PDF"); }
+--              }}>Exporter en PNG</button>
+--            )}
+-+            {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
+-             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
+-             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
+-             {fiche && (
+-diff --git a/src/ui/Review.tsx b/src/ui/Review.tsx
+-index 11f9cb0..82d13d8 100644
+---- a/src/ui/Review.tsx
+-+++ b/src/ui/Review.tsx
+-@@ -13,6 +13,7 @@ import { validateFiche } from '../lib/schema/validate';
+- import type { Db, Draft } from '../lib/storage/db';
+- import { getSettings } from '../lib/storage/settings';
+- import type { Block, Brief, Fiche, Problem } from '../lib/types';
+-+import AsyncButton from './AsyncButton';
+- import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
+- import { messageFor } from './messages';
+- 
+-@@ -71,8 +72,8 @@ export default function Review({ repo, db, draft, path }: Props) {
+-   const bloquants = checks.schema.length + checks.lint.length + checks.katex.length;
+-   const peutValider = !!repo && !!fiche && canValidate(checked) && bloquants === 0;
+- 
+--  const valider = async (force = false) => {
+--    if (!repo || !fiche) return;
+-+  const valider = async (force = false): Promise<boolean> => {
+-+    if (!repo || !fiche) return false;
+-     setBusy(true); setMsg('');
+-     try {
+-       const saved = await validerFiche(repo, fiche, { baseSha, force });
+-@@ -80,11 +81,13 @@ export default function Review({ repo, db, draft, path }: Props) {
+-       setBaseSha((await repo.readFile(saved)).sha);
+-       setConflict(null);
+-       setMsg(`Fiche validée : ${saved}`);
+-+      return true;
+-     } catch (e) {
+-       if (e instanceof ConflictError) {
+-         try { setConflict((await repo.readFile(ficheSavePath(fiche))).content); } catch { setConflict('(version distante introuvable)'); }
+-         setMsg(messageFor(e));
+-       } else setMsg(messageFor(e, { source: 'github', offline: !navigator.onLine }));
+-+      return false;
+-     } finally { setBusy(false); }
+-   };
+- 
+-@@ -178,7 +181,7 @@ export default function Review({ repo, db, draft, path }: Props) {
+-         <textarea placeholder="Consigne pour Gemini (par exemple : découpe la page 3)" style={{ width: '100%', padding: 8, marginTop: 8 }} rows={2} value={instruction} onChange={(e) => setInstruction(e.target.value)} />
+-         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+-           <button className="btn ghost" disabled={busy || !instruction.trim()} onClick={() => void corriger()}>Corriger avec Gemini</button>
+--          <button className="btn" disabled={!peutValider || busy} onClick={() => void valider()}>Valider</button>
+-+          <AsyncButton className="btn" successLabel="Validée" disabled={!peutValider || busy} run={() => valider()}>Valider</AsyncButton>
+-         </div>
+-         {!peutValider && <p style={{ fontSize: 13 }}>Valider s'active quand toutes les cases sont cochées et que schéma, lint et KaTeX sont au vert.</p>}
+-         {msg && <p role="status">{msg}</p>}
+-diff --git a/src/ui/Settings.tsx b/src/ui/Settings.tsx
+-index 13fa3c0..c3b19bd 100644
+---- a/src/ui/Settings.tsx
+-+++ b/src/ui/Settings.tsx
+-@@ -1,4 +1,5 @@
+- import { useState } from 'react';
+-+import AsyncButton from './AsyncButton';
+- import ThemeSettings from './ThemeSettings';
+- import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
+- 
+-@@ -56,8 +57,8 @@ export default function Settings() {
+-       {num('maxPerDay', 'Requêtes par jour')}
+-       {num('lotPages', 'Pages par lot (import de cours)')}
+-       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+--        <button className="btn" onClick={async () => setMsg(await testGithub(s))}>Tester la connexion GitHub</button>
+--        <button className="btn" onClick={async () => setMsg(await testGemini(s))}>Tester la connexion Gemini</button>
+-+        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGithub(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion GitHub</AsyncButton>
+-+        <AsyncButton className="btn ghost" successLabel="Connecté" run={async () => { const r = await testGemini(s); setMsg(r); return r.endsWith('connecté'); }}>Tester la connexion Gemini</AsyncButton>
+-         <button className="btn ghost" onClick={() => { clearKeys(); setS(getSettings()); setMsg('Clés effacées'); }}>Effacer mes clés</button>
+-       </div>
+-       {msg && <p role="status">{msg}</p>}
+-diff --git a/src/ui/glass.css b/src/ui/glass.css
+-deleted file mode 100644
+-index c20664d..0000000
+---- a/src/ui/glass.css
+-+++ /dev/null
+-@@ -1,136 +0,0 @@
+--/* Séquentia — couche « floaty & glassy »
+--   À importer EN DERNIER dans src/main.tsx :  import './styles/glass.css';
+--   Aucune dépendance : variables CSS + sélecteurs utilitaires (.glass, .nav-pill, .btn…). */
+--
+--:root {
+--  --brand: #DD0033;
+--  --brand-hi: #FF3D63;
+--  --brand-lo: #A8002A;
+--  --ink: #1B1215;
+--  --ink-soft: #5C4A50;
+--  --bg: #FBF5F6;
+--  --glass: rgba(255, 255, 255, .58);
+--  --glass-strong: rgba(255, 255, 255, .78);
+--  --glass-edge: rgba(255, 255, 255, .85);
+--  --glass-line: rgba(221, 0, 51, .12);
+--  --shadow-float: 0 18px 50px -12px rgba(120, 10, 40, .28), 0 4px 14px -4px rgba(120, 10, 40, .14);
+--  --radius: 22px;
+--  --radius-pill: 999px;
+--  --font-title: 'Andaluz', 'Inter Variable', system-ui, serif;
+--  --font-section: 'Melbourne', 'Inter Variable', system-ui, sans-serif;
+--  --font-body: 'Inter Variable', system-ui, -apple-system, sans-serif;
+--}
+--:root[data-theme="dark"] {
+--  --ink: #FBEFF1; --ink-soft: #C9B3B9; --bg: #140A0D;
+--  --glass: rgba(40, 20, 26, .55); --glass-strong: rgba(52, 26, 34, .78);
+--  --glass-edge: rgba(255, 255, 255, .14); --glass-line: rgba(255, 61, 99, .22);
+--  --shadow-float: 0 18px 50px -12px rgba(0, 0, 0, .7), 0 4px 14px -4px rgba(0, 0, 0, .5);
+--}
+--@media (prefers-color-scheme: dark) {
+--  :root:not([data-theme="light"]) {
+--    --ink: #FBEFF1; --ink-soft: #C9B3B9; --bg: #140A0D;
+--    --glass: rgba(40, 20, 26, .55); --glass-strong: rgba(52, 26, 34, .78);
+--    --glass-edge: rgba(255, 255, 255, .14); --glass-line: rgba(255, 61, 99, .22);
+--    --shadow-float: 0 18px 50px -12px rgba(0, 0, 0, .7), 0 4px 14px -4px rgba(0, 0, 0, .5);
+--  }
+--}
+--
+--html, body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+--
+--/* Fond : halos flous qui dérivent lentement */
+--body::before {
+--  content: ''; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+--  background:
+--    radial-gradient(40% 35% at 15% 20%, rgba(221, 0, 51, .30), transparent 70%),
+--    radial-gradient(35% 40% at 85% 15%, rgba(255, 120, 150, .28), transparent 70%),
+--    radial-gradient(45% 40% at 70% 90%, rgba(255, 190, 120, .22), transparent 70%);
+--  filter: blur(40px);
+--  animation: drift 26s ease-in-out infinite alternate;
+--}
+--@keyframes drift { to { transform: translate3d(3%, -2%, 0) scale(1.08); } }
+--
+--/* Verre */
+--.glass, .card, .panel {
+--  background: var(--glass);
+--  -webkit-backdrop-filter: blur(22px) saturate(170%);
+--  backdrop-filter: blur(22px) saturate(170%);
+--  border: 1px solid var(--glass-edge);
+--  border-radius: var(--radius);
+--  box-shadow: var(--shadow-float), inset 0 1px 0 rgba(255, 255, 255, .5);
+--}
+--
+--/* Navigation flottante, comme sur le site : Accueil · Produits · Contact */
+--.nav-pill {
+--  position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); z-index: 20;
+--  display: flex; gap: 4px; width: fit-content; margin: 12px auto 0; padding: 6px;
+--  background: var(--glass); border: 1px solid var(--glass-edge); border-radius: var(--radius-pill);
+--  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+--  box-shadow: var(--shadow-float);
+--}
+--.nav-pill a, .nav-pill button {
+--  font: 600 .95rem var(--font-body); color: var(--ink-soft); background: none; border: 0;
+--  padding: 10px 18px; border-radius: var(--radius-pill); cursor: pointer; text-decoration: none;
+--  transition: background .25s, color .25s, transform .25s;
+--}
+--.nav-pill a:hover, .nav-pill button:hover { color: var(--ink); transform: translateY(-1px); }
+--.nav-pill [aria-current="page"], .nav-pill .active {
+--  color: #fff; background: linear-gradient(135deg, var(--brand-hi), var(--brand));
+--  box-shadow: 0 6px 16px -4px rgba(221, 0, 51, .55);
+--}
+--
+--/* Boutons */
+--.btn {
+--  font: 700 1rem var(--font-body); color: #fff; border: 0; cursor: pointer;
+--  padding: 14px 26px; border-radius: var(--radius-pill);
+--  background: linear-gradient(135deg, var(--brand-hi), var(--brand) 60%, var(--brand-lo));
+--  box-shadow: 0 12px 28px -8px rgba(221, 0, 51, .6), inset 0 1px 0 rgba(255, 255, 255, .35);
+--  transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s;
+--}
+--.btn:hover { transform: translateY(-3px); box-shadow: 0 18px 34px -8px rgba(221, 0, 51, .65), inset 0 1px 0 rgba(255, 255, 255, .35); }
+--.btn:active { transform: translateY(0) scale(.98); }
+--.btn:disabled { filter: grayscale(.7); opacity: .5; cursor: not-allowed; transform: none; }
+--.btn.ghost { color: var(--ink); background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: var(--shadow-float); }
+--
+--/* Champs */
+--input, select, textarea {
+--  font: inherit; color: var(--ink); background: var(--glass-strong);
+--  border: 1px solid var(--glass-line); border-radius: 14px; padding: 12px 14px; outline: none;
+--  transition: border-color .2s, box-shadow .2s;
+--}
+--input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 4px rgba(221, 0, 51, .15); }
+--
+--/* Titres */
+--h1 { font-family: var(--font-title); letter-spacing: -.01em; }
+--h2, h3 { font-family: var(--font-section); }
+--
+--/* Fiches flottantes (bibliothèque, accueil) */
+--.float-card { animation: float 7s ease-in-out infinite; transition: transform .35s; }
+--.float-card:nth-child(2n) { animation-delay: -2.3s; }
+--.float-card:nth-child(3n) { animation-delay: -4.6s; }
+--.float-card:hover { animation-play-state: paused; transform: translateY(-8px) rotate(-.6deg) scale(1.02); }
+--@keyframes float { 50% { transform: translateY(-10px) rotate(.4deg); } }
+--
+--/* ⚠ Export PDF/PNG : la fiche doit rester PLATE (modern-screenshot ne rend pas
+--   fiablement backdrop-filter ; une fiche vitrée risque de sortir blanche). */
+--.fiche, .fiche *, .export-root, .export-root * {
+--  -webkit-backdrop-filter: none !important; backdrop-filter: none !important; animation: none !important;
+--}
+--
+--@media (prefers-reduced-motion: reduce) {
+--  body::before, .float-card { animation: none; }
+--  * { transition-duration: .01ms !important; }
+--}
+--/* Onglets Édition / Aperçu (Review) */
+--.btn.ghost[aria-pressed="true"] {
+--  color: #fff; border-color: transparent;
+--  background: linear-gradient(135deg, var(--brand-hi), var(--brand));
+--}
+--fieldset { border: 1px solid var(--glass-line); border-radius: 16px; }
+--.badge.ok { color: #0a7a3d; background: rgba(10, 160, 80, .14); padding: 2px 8px; border-radius: 99px; font-size: .75rem; font-weight: 700; }
+--
+--/* Impression PDF : aucune vitre autour des pages */
+--@media print {
+--  body::before, .nav-pill { display: none !important; }
+--  .glass, .card, .panel { background: none !important; border: 0 !important; box-shadow: none !important;
+--    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; animation: none !important; }
+--}
+--- 
+-2.43.0
+-
+diff --git a/README.md b/README.md
+index a0420b7..a3d89a1 100644
+--- a/README.md
++++ b/README.md
+@@ -44,6 +44,18 @@ Les tests automatiques ne couvrent ni les écrans, ni Safari. Coche chaque ligne
+ - [ ] **Cours** : importer un PDF de 3 pages, lancer, relire côte à côte (page source à gauche, rendu à droite), enregistrer ; retrouver le cours dans la Bibliothèque ; couper le réseau en cours d'import puis reprendre : la progression est conservée.
+ - [ ] Hors connexion : un message clair s'affiche à l'enregistrement et le brouillon est conservé.
+ 
++## Robustesse (erreurs 529/503, contrôle des imports, export vérifié)
++
++- **Reprises** : surcharge (500, 502, 503, 504, 529) = attentes de 1, 2 et 4 s avec un peu d'aléa, 4 essais par modèle. Un quota court (≤ 20 s) est attendu ; un quota long fait passer au modèle suivant. Une clé refusée arrête tout de suite.
++- **Modèle de secours** : Réglages → « Modèle de secours ». Il n'est essayé que si le principal reste indisponible. Vide : pas de secours.
++- **Plafonds locaux** : une tentative refusée par le serveur (5xx) est remboursée dans le compteur.
++- **Import de cours** : chaque lot est contrôlé (repères `<!-- page N -->` attendus, et, si le PDF a du texte, part des mots du PDF retrouvés dans la transcription, lot par lot et page par page). Un lot douteux est marqué « À contrôler » et peut être relancé seul. Une réponse coupée (MAX_TOKENS) est retranscrite page par page.
++- **Reprise automatique** : après une pause réseau ou quota court, l'import repart seul (3 fois au plus).
++- **Journal des appels** : « Détails des appels » (modèle, essai, résultat, durée) dans Générer et Cours.
++- **Export PDF vérifié** : le PDF est fabriqué à partir des pages rendues, les pages vides sont refusées, puis le fichier est relu (en-tête, nombre de pages). « Imprimer » reste disponible pour un PDF vectoriel, mais l'appli ne peut pas savoir si le fichier a été créé.
++
++À vérifier sur l'iPad : un PDF de plusieurs pages en mode avion à mi-parcours (pause puis reprise), un lot suspect relancé seul, et l'export PDF vérifié d'une fiche de 3 pages.
++
+ ## Limites connues
+ 
+ - Le site ne se recharge pas hors connexion (pas de service worker).
+diff --git a/src/lib/cours/checks.ts b/src/lib/cours/checks.ts
+index 9f1ead7..ed5dbdf 100644
+--- a/src/lib/cours/checks.ts
++++ b/src/lib/cours/checks.ts
+@@ -23,6 +23,8 @@ export function checkMarkdown(md: string): Problem[] {
+   });
+   const n = (md.match(/\[illisible\]/g) ?? []).length;
+   if (n > 0) out.push({ code: 'lint', message: `${n} passage${n > 1 ? 's' : ''} [illisible] à relire` });
++  const nl = (md.match(/\[lot non transcrit/g) ?? []).length;
++  if (nl > 0) out.push({ code: 'lint', message: `${nl} lot${nl > 1 ? 's' : ''} non transcrit${nl > 1 ? 's' : ''} : relance-le dans Imports en cours` });
+   return out;
+ }
+ 
+diff --git a/src/lib/cours/queue.ts b/src/lib/cours/queue.ts
+index f19225c..227efbd 100644
+--- a/src/lib/cours/queue.ts
++++ b/src/lib/cours/queue.ts
+@@ -1,60 +1,129 @@
+-import { NetworkError, RateLimitError } from '../errors';
++import { BlockedError, NetworkError, RateLimitError, TruncatedError } from '../errors';
+ import { fromBase64, toBase64 } from '../bytes';
+ import type { Db } from '../storage/db';
+-import type { Lot } from './chunk';
++import { splitPdf, type Lot } from './chunk';
++import type { LotCheck } from './verify';
+ 
+ type StoredLot = { index: number; fromPage: number; toPage: number; mime?: string; b64: string };
+-type State = { lots: StoredLot[]; results: string[]; next: number };
++export type LotStatus = {
++  state: 'pending' | 'ok' | 'suspect' | 'failed';
++  coverage?: number; missing?: number[]; notes?: string[];
++  /** Le lot a été redécoupé page par page après une réponse tronquée. */
++  split?: boolean;
++};
++export type LotInfo = LotStatus & { index: number; fromPage: number; toPage: number };
++export type Verify = (lot: Lot, md: string) => Promise<LotCheck>;
++type State = { lots: StoredLot[]; results: string[]; next: number; status?: LotStatus[] };
+ const key = (id: string) => `import:${id}`;
+ const INDEX = 'import:index';
+ 
+-/** File d'import reprenable : la progression et les lots sont enregistrés dans la base locale après chaque lot. */
++const isPdf = (l: { mime?: string }) => !l.mime || l.mime.includes('pdf');
++const placeholder = (l: StoredLot) => `<!-- page ${l.fromPage} -->\n[lot non transcrit : pages ${l.fromPage} à ${l.toPage}]`;
++
++/** File d'import reprenable : la progression, les lots et le verdict de chaque lot sont enregistrés après chaque lot. */
+ export class ImportQueue {
+   private db: Db;
+   private transcribe: (lot: Lot) => Promise<string>;
+-  constructor(db: Db, transcribe: (lot: Lot) => Promise<string>) { this.db = db; this.transcribe = transcribe; }
++  private verify?: Verify;
++  constructor(db: Db, transcribe: (lot: Lot) => Promise<string>, verify?: Verify) { this.db = db; this.transcribe = transcribe; this.verify = verify; }
+ 
+   private async load(id: string): Promise<State> {
+     const st = (await this.db.get(key(id))) as State | undefined;
+     if (!st) throw new Error(`Import inconnu : ${id}`);
+     return st;
+   }
++  private save(id: string, st: State): Promise<void> { return this.db.put(key(id), st); }
+   async ids(): Promise<string[]> { return ((await this.db.get(INDEX)) as string[] | undefined) ?? []; }
+ 
+   async enqueue(id: string, lots: Lot[]): Promise<void> {
+     const st: State = {
+       lots: lots.map((l) => ({ index: l.index, fromPage: l.fromPage, toPage: l.toPage, mime: l.mime, b64: toBase64(l.data) })),
+-      results: lots.map(() => ''), next: 0,
++      results: lots.map(() => ''), next: 0, status: lots.map(() => ({ state: 'pending' })),
+     };
+-    await this.db.put(key(id), st);
++    await this.save(id, st);
+     const ids = await this.ids();
+     if (!ids.includes(id)) await this.db.put(INDEX, [...ids, id]);
+   }
+ 
++  private toLot(s: StoredLot): Lot { return { index: s.index, fromPage: s.fromPage, toPage: s.toPage, mime: s.mime, data: fromBase64(s.b64) }; }
++
++  /** Transcrit un lot, le contrôle, et enregistre résultat + verdict. Quota ou réseau : l'erreur remonte. */
++  private async process(st: State, i: number): Promise<void> {
++    const s = st.lots[i];
++    const lot = this.toLot(s);
++    st.status ??= [];
++    let md: string;
++    let split = false;
++    try {
++      try {
++        md = await this.transcribe(lot);
++      } catch (e) {
++        // Réponse coupée : on retranscrit page par page plutôt que d'accepter un texte incomplet.
++        if (!(e instanceof TruncatedError) || lot.toPage <= lot.fromPage || !isPdf(lot)) throw e;
++        const buf = lot.data.buffer.slice(lot.data.byteOffset, lot.data.byteOffset + lot.data.byteLength) as ArrayBuffer;
++        const parts: string[] = [];
++        for (const p of await splitPdf(buf, 1)) {
++          parts.push(await this.transcribe({ ...p, index: lot.index, fromPage: lot.fromPage + p.fromPage - 1, toPage: lot.fromPage + p.toPage - 1 }));
++        }
++        md = parts.join('\n\n');
++        split = true;
++      }
++    } catch (e) {
++      if (e instanceof TruncatedError || e instanceof BlockedError) {
++        st.results[i] = placeholder(s);
++        st.status[i] = { state: 'failed', notes: [e instanceof BlockedError ? `Contenu refusé par Gemini (${e.reason})` : 'Réponse tronquée : réduis le nombre de pages par lot dans Réglages'] };
++        return;
++      }
++      throw e;
++    }
++    let chk: LotCheck = { state: 'ok', missing: [], weak: [], notes: [] };
++    if (this.verify) {
++      try { chk = await this.verify(lot, md); } catch { chk = { state: 'ok', missing: [], weak: [], notes: ['Contrôle automatique impossible'] }; }
++    }
++    st.results[i] = md;
++    st.status[i] = { state: chk.state, coverage: chk.coverage, missing: chk.missing, notes: chk.notes, ...(split ? { split: true } : {}) };
++  }
++
+   /** Traite les lots restants. Quota ou réseau : s'arrête avec 'paused' sans perdre ce qui est fait. */
+   async run(id: string): Promise<'done' | 'paused'> {
+     const st = await this.load(id);
+     for (let i = st.next; i < st.lots.length; i++) {
+-      const s = st.lots[i];
+       try {
+-        st.results[i] = await this.transcribe({ index: s.index, fromPage: s.fromPage, toPage: s.toPage, mime: s.mime, data: fromBase64(s.b64) });
++        await this.process(st, i);
+       } catch (e) {
+         if (e instanceof RateLimitError || e instanceof NetworkError) return 'paused';
+         throw e;
+       }
+       st.next = i + 1;
+-      await this.db.put(key(id), st);
++      await this.save(id, st);
+     }
+     return 'done';
+   }
+ 
++  /** Relance un seul lot déjà traité (suspect ou en échec) ; les erreurs de quota et de réseau remontent à l'appelant. */
++  async rerun(id: string, i: number): Promise<LotStatus> {
++    const st = await this.load(id);
++    if (i < 0 || i >= st.next) throw new Error(`Lot ${i} pas encore traité`);
++    await this.process(st, i);
++    await this.save(id, st);
++    return st.status?.[i] ?? { state: 'ok' };
++  }
++
+   async progress(id: string): Promise<{ done: number; total: number }> {
+     const st = await this.load(id);
+     return { done: st.next, total: st.lots.length };
+   }
++  /** État de chaque lot : en attente, lu et vérifié, suspect, ou en échec. */
++  async lotInfos(id: string): Promise<LotInfo[]> {
++    const st = await this.load(id);
++    return st.lots.map((l, i) => ({
++      index: l.index, fromPage: l.fromPage, toPage: l.toPage,
++      ...(i >= st.next ? { state: 'pending' as const } : (st.status?.[i] ?? { state: 'ok' as const })),
++    }));
++  }
+   async lots(id: string): Promise<Lot[]> {
+     const st = await this.load(id);
+-    return st.lots.map((l) => ({ index: l.index, fromPage: l.fromPage, toPage: l.toPage, mime: l.mime, data: fromBase64(l.b64) }));
++    return st.lots.map((l) => this.toLot(l));
+   }
+   async markdown(id: string): Promise<string> {
+     const st = await this.load(id);
+diff --git a/src/lib/cours/transcribe.ts b/src/lib/cours/transcribe.ts
+index 623cf1a..feb0d74 100644
+--- a/src/lib/cours/transcribe.ts
++++ b/src/lib/cours/transcribe.ts
+@@ -1,5 +1,7 @@
+ import { toBase64 } from '../bytes';
++import { TruncatedError } from '../errors';
+ import { postGemini } from '../gemini/client';
++import { robustPost, type RobustCfg } from '../gemini/robust';
+ import type { Lot } from './chunk';
+ 
+ /** Consigne de transcription (spec §7.2). */
+@@ -27,3 +29,21 @@ export function transcribeWithGemini(o: { key: string; model: string; lot: Lot;
+     },
+   });
+ }
++
++function transcriptionBody(lot: Lot): unknown {
++  return {
++    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: lot.mime ?? 'application/pdf', data: toBase64(lot.data) } }, { text: transcriptionPrompt(lot) }] }],
++    generationConfig: { temperature: 0.1, responseMimeType: 'text/plain' },
++  };
++}
++
++/** Taille maximale approximative d'un envoi en ligne (à confirmer dans la documentation Gemini). */
++export const MAX_INLINE_BYTES = 18 * 1024 * 1024;
++
++/** Transcription avec reprises, modèle de secours et refus d'une réponse coupée (finishReason MAX_TOKENS). */
++export async function transcribeRobust(o: { cfg: RobustCfg; lot: Lot }): Promise<string> {
++  if (o.lot.data.byteLength > MAX_INLINE_BYTES) throw new TruncatedError(`Lot trop lourd (${Math.round(o.lot.data.byteLength / 1048576)} Mo)`);
++  const r = await robustPost(o.cfg, transcriptionBody(o.lot));
++  if (r.finishReason === 'MAX_TOKENS') throw new TruncatedError();
++  return r.text;
++}
+diff --git a/src/lib/cours/verify.ts b/src/lib/cours/verify.ts
+new file mode 100644
+index 0000000..cb5a112
+--- /dev/null
++++ b/src/lib/cours/verify.ts
+@@ -0,0 +1,119 @@
++import type { Lot } from './chunk';
++
++/** Résultat du contrôle d'un lot transcrit. `suspect` = à relire ou à relancer avant de faire confiance au texte. */
++export type LotCheck = {
++  state: 'ok' | 'suspect';
++  /** Part des mots du PDF retrouvés dans la transcription (absent : PDF sans texte, scan ou photo). */
++  coverage?: number;
++  /** Pages attendues dont le repère <!-- page N --> manque. */
++  missing: number[];
++  /** Pages dont le texte est très incomplet par rapport au PDF. */
++  weak: number[];
++  notes: string[];
++};
++
++const MARK = /<!--\s*page\s+(\d+)\s*-->/g;
++const range = (a: number, b: number) => Array.from({ length: Math.max(0, b - a + 1) }, (_, i) => a + i);
++
++export function pageMarkers(md: string): number[] {
++  return [...md.matchAll(MARK)].map((m) => Number(m[1]));
++}
++
++/** Compare les repères de page trouvés à ceux attendus pour le lot. */
++export function checkPageMarkers(md: string, lot: Pick<Lot, 'fromPage' | 'toPage'>) {
++  const found = pageMarkers(md);
++  const expected = range(lot.fromPage, lot.toPage);
++  return {
++    missing: expected.filter((p) => !found.includes(p)),
++    unexpected: [...new Set(found.filter((p) => p < lot.fromPage || p > lot.toPage))],
++    duplicated: [...new Set(found.filter((p, i) => found.indexOf(p) !== i))],
++    ordered: found.every((p, i) => i === 0 || p >= found[i - 1]),
++  };
++}
++
++const norm = (s: string) => s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
++/** Mots de 5 lettres ou plus (les chiffres et symboles de maths sont ignorés : leur extraction est trop bruitée). */
++export const wordsOf = (s: string): string[] => norm(s).match(/[a-z]{5,}/g) ?? [];
++
++/** Part des mots distincts de `reference` qui apparaissent dans `candidate`. */
++export function coverage(reference: string, candidate: string): { ratio: number; total: number } {
++  const ref = [...new Set(wordsOf(reference))];
++  if (!ref.length) return { ratio: 1, total: 0 };
++  const cand = new Set(wordsOf(candidate));
++  return { ratio: ref.filter((w) => cand.has(w)).length / ref.length, total: ref.length };
++}
++
++/** Texte du Markdown de chaque page, d'après les repères. */
++export function splitByPage(md: string): Map<number, string> {
++  const marks = [...md.matchAll(MARK)];
++  const out = new Map<number, string>();
++  marks.forEach((m, i) => {
++    const start = (m.index ?? 0) + m[0].length;
++    const end = i + 1 < marks.length ? (marks[i + 1].index ?? md.length) : md.length;
++    out.set(Number(m[1]), (out.get(Number(m[1])) ?? '') + md.slice(start, end));
++  });
++  return out;
++}
++
++/** Texte de chaque page du PDF du lot, ou null si le lot n'a pas de couche texte (scan, photo). */
++export async function extractPdfPages(lot: Lot): Promise<string[] | null> {
++  if (lot.mime && !lot.mime.includes('pdf')) return null;
++  const pdfjs = await import('pdfjs-dist');
++  const doc = await pdfjs.getDocument({ data: lot.data.slice() }).promise;
++  const pages: string[] = [];
++  for (let p = 1; p <= doc.numPages; p++) {
++    const tc = await (await doc.getPage(p)).getTextContent();
++    pages.push(tc.items.map((i) => (i as { str?: string }).str ?? '').join(' '));
++  }
++  return pages.join('').replace(/\s/g, '').length >= 40 * pages.length ? pages : null;
++}
++
++export type VerifyOpts = {
++  extractText?: (lot: Lot) => Promise<string[] | null>;
++  /** Couverture minimale sur le lot (défaut 0,7 : les figures et formules ne sont pas du texte). */
++  minCoverage?: number;
++  /** Couverture minimale par page (défaut 0,5). */
++  minPageCoverage?: number;
++};
++
++/**
++ * Contrôle un lot transcrit sans refaire appel à l'IA :
++ * 1. repères de page présents, dans l'ordre, sans doublon ;
++ * 2. si le PDF a une couche texte : les mots du PDF se retrouvent dans la transcription, lot par lot et page par page.
++ */
++export async function verifyLot(lot: Lot, md: string, o: VerifyOpts = {}): Promise<LotCheck> {
++  const notes: string[] = [];
++  let suspect = false;
++
++  const m = checkPageMarkers(md, lot);
++  if (m.missing.length) { suspect = true; notes.push(`Repère manquant pour la page ${m.missing.join(', ')}`); }
++  if (m.unexpected.length) { suspect = true; notes.push(`Repère inattendu : page ${m.unexpected.join(', ')}`); }
++  if (m.duplicated.length) { suspect = true; notes.push(`Page ${m.duplicated.join(', ')} répétée`); }
++  if (!m.ordered) { suspect = true; notes.push('Pages dans le désordre'); }
++
++  let ratio: number | undefined;
++  const weak: number[] = [];
++  try {
++    const pages = await (o.extractText ?? extractPdfPages)(lot);
++    if (pages) {
++      ratio = coverage(pages.join(' '), md).ratio;
++      const byPage = splitByPage(md);
++      pages.forEach((text, i) => {
++        const n = lot.fromPage + i;
++        const seg = byPage.get(n);
++        const c = coverage(text, seg ?? md);
++        if (seg !== undefined && c.total >= 15 && c.ratio < (o.minPageCoverage ?? 0.5)) weak.push(n);
++      });
++      if (ratio < (o.minCoverage ?? 0.7)) { suspect = true; notes.push(`Seulement ${Math.round(ratio * 100)} % des mots du PDF retrouvés`); }
++      if (weak.length) { suspect = true; notes.push(`Page ${weak.join(', ')} très incomplète`); }
++    } else {
++      notes.push('Pas de texte dans ce PDF : comparaison impossible, seuls les repères de page sont contrôlés');
++    }
++  } catch {
++    notes.push('Comparaison avec le PDF impossible');
++  }
++  const n = (md.match(/\[illisible\]/g) ?? []).length;
++  if (n) notes.push(`${n} passage${n > 1 ? 's' : ''} [illisible]`);
++
++  return { state: suspect ? 'suspect' : 'ok', ...(ratio !== undefined ? { coverage: ratio } : {}), missing: m.missing, weak, notes };
++}
+diff --git a/src/lib/errors.ts b/src/lib/errors.ts
+index 83a7079..d959877 100644
+--- a/src/lib/errors.ts
++++ b/src/lib/errors.ts
+@@ -1,9 +1,12 @@
+ export class RateLimitError extends Error {
+   retryAfterSec: number;
+-  constructor(retryAfterSec: number) {
++  /** true quand c'est notre plafond local (RequestBudget) qui bloque, pas Gemini. */
++  local: boolean;
++  constructor(retryAfterSec: number, local = false) {
+     super(`Quota atteint, réessayer dans ${retryAfterSec} s`);
+     this.name = 'RateLimitError';
+     this.retryAfterSec = retryAfterSec;
++    this.local = local;
+   }
+ }
+ export class AuthError extends Error {
+@@ -12,6 +15,24 @@ export class AuthError extends Error {
+ export class NetworkError extends Error {
+   constructor(message = 'Pas de réponse du réseau') { super(message); this.name = 'NetworkError'; }
+ }
++/** Gemini est surchargé ou en panne passagère (500, 502, 503, 504, 529) : cela vaut la peine de réessayer. */
++export class ServerBusyError extends NetworkError {
++  status: number;
++  constructor(status: number) {
++    super(`Serveur surchargé (${status})`);
++    this.name = 'ServerBusyError';
++    this.status = status;
++  }
++}
++/** La réponse s'est arrêtée parce qu'elle a atteint la limite de longueur (finishReason MAX_TOKENS). */
++export class TruncatedError extends Error {
++  constructor(message = 'Réponse tronquée par Gemini') { super(message); this.name = 'TruncatedError'; }
++}
++/** Gemini a refusé de traiter le contenu (filtre de sécurité, récitation…). */
++export class BlockedError extends Error {
++  reason: string;
++  constructor(reason: string) { super(`Contenu refusé par Gemini (${reason})`); this.name = 'BlockedError'; this.reason = reason; }
++}
+ export class ConflictError extends Error {
+   constructor(message = 'Le fichier a changé ailleurs') { super(message); this.name = 'ConflictError'; }
+ }
+diff --git a/src/lib/export/pdf.ts b/src/lib/export/pdf.ts
+index a1d5008..a09ef3c 100644
+--- a/src/lib/export/pdf.ts
++++ b/src/lib/export/pdf.ts
+@@ -1,8 +1,11 @@
+ import type { Format } from '../types';
+ import { FORMATS } from '../render/formats';
+ 
+-/** Export principal : impression Safari (« Enregistrer dans Fichiers »), vectoriel, polices intégrées. */
+-export function printPages(format: Format): void {
++/**
++ * Export vectoriel : impression Safari (« Enregistrer dans Fichiers »), polices intégrées.
++ * L'appli ne peut pas savoir si un fichier a été créé : `onAfter` signale seulement que la boîte s'est fermée.
++ */
++export function printPages(format: Format, onAfter?: () => void): void {
+   const { width, height } = FORMATS[format];
+   let style = document.getElementById('print-page-style') as HTMLStyleElement | null;
+   if (!style) {
+@@ -11,5 +14,6 @@ export function printPages(format: Format): void {
+     document.head.appendChild(style);
+   }
+   style.textContent = `@page { size: ${width}px ${height}px; margin: 0 }`;
++  if (onAfter) window.addEventListener('afterprint', onAfter, { once: true });
+   window.print();
+ }
+diff --git a/src/lib/export/pdfBuild.ts b/src/lib/export/pdfBuild.ts
+new file mode 100644
+index 0000000..f65355d
+--- /dev/null
++++ b/src/lib/export/pdfBuild.ts
+@@ -0,0 +1,73 @@
++import { PDFDocument } from 'pdf-lib';
++import { FORMATS } from '../render/formats';
++import type { Format } from '../types';
++import { exportPng, isLikelyBlank } from './png';
++
++/** Taille de page du PDF en points : A4 exact pour la fiche, 0,75 pt par pixel pour le post. */
++export const pageSizePt = (format: Format): { width: number; height: number } =>
++  format === 'fiche' ? { width: 595.28, height: 841.89 } : { width: FORMATS.post.width * 0.75, height: FORMATS.post.height * 0.75 };
++
++/** Assemble un PDF : une image PNG par page, à la taille de la page. */
++export async function buildPdfFromPngs(pngs: Uint8Array[], format: Format): Promise<Uint8Array> {
++  const doc = await PDFDocument.create();
++  const { width, height } = pageSizePt(format);
++  for (const b of pngs) {
++    const img = await doc.embedPng(b);
++    doc.addPage([width, height]).drawImage(img, { x: 0, y: 0, width, height });
++  }
++  return doc.save();
++}
++
++/** Écart-type des niveaux de gris : une page blanche ou unie est quasi à zéro, même une page presque vide de texte en a un. */
++export function isBlankPixels(rgba: ArrayLike<number>, minStd = 3): boolean {
++  let n = 0, sum = 0, sum2 = 0;
++  for (let i = 0; i + 2 < rgba.length; i += 4) {
++    const g = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
++    sum += g; sum2 += g * g; n++;
++  }
++  if (!n) return true;
++  const mean = sum / n;
++  return Math.sqrt(Math.max(sum2 / n - mean * mean, 0)) < minStd;
++}
++
++/** Version navigateur : réduit l'image à 80 px de large et regarde les pixels. En cas d'impossibilité, ne conclut pas à « vide ». */
++export async function blobIsBlank(blob: Blob): Promise<boolean> {
++  try {
++    const bmp = await createImageBitmap(blob);
++    const w = 80, h = Math.max(1, Math.round((80 * bmp.height) / bmp.width));
++    const c = document.createElement('canvas');
++    c.width = w; c.height = h;
++    const ctx = c.getContext('2d');
++    if (!ctx) return false;
++    ctx.drawImage(bmp, 0, 0, w, h);
++    return isBlankPixels(ctx.getImageData(0, 0, w, h).data);
++  } catch { return false; }
++}
++
++export type PdfCheck = { ok: boolean; pages: number; expected: number; bytes: number; problems: string[] };
++
++/** Relit le PDF fabriqué : en-tête, structure lisible, nombre de pages attendu, taille plausible. */
++export async function verifyPdf(bytes: Uint8Array, expected: number): Promise<PdfCheck> {
++  const problems: string[] = [];
++  if (new TextDecoder().decode(bytes.slice(0, 5)) !== '%PDF-') problems.push('En-tête PDF absent');
++  let pages = 0;
++  try { pages = (await PDFDocument.load(bytes)).getPageCount(); } catch { problems.push('Le PDF ne se relit pas'); }
++  if (pages !== expected) problems.push(`${pages} page${pages > 1 ? 's' : ''} au lieu de ${expected}`);
++  if (bytes.length < 2000) problems.push('Fichier anormalement petit');
++  return { ok: problems.length === 0, pages, expected, bytes: bytes.length, problems };
++}
++
++export type PdfReport = PdfCheck & { blankPages: number[] };
++
++/** Fabrique le PDF à partir des pages affichées, après avoir refusé les pages vides, puis le relit. `bytes` n'est fourni que si tout est bon. */
++export async function exportVerifiedPdf(pages: HTMLElement[], format: Format): Promise<{ bytes?: Uint8Array; report: PdfReport }> {
++  const blobs = await exportPng(pages);
++  const blankPages: number[] = [];
++  for (const [i, b] of blobs.entries()) if (isLikelyBlank(b) || (await blobIsBlank(b))) blankPages.push(i + 1);
++  if (blankPages.length) {
++    return { report: { ok: false, pages: 0, expected: pages.length, bytes: 0, problems: [`Page${blankPages.length > 1 ? 's' : ''} vide${blankPages.length > 1 ? 's' : ''} : ${blankPages.join(', ')}`], blankPages } };
++  }
++  const bytes = await buildPdfFromPngs(await Promise.all(blobs.map(async (b) => new Uint8Array(await b.arrayBuffer()))), format);
++  const chk = await verifyPdf(bytes, pages.length);
++  return { ...(chk.ok ? { bytes } : {}), report: { ...chk, blankPages } };
++}
+diff --git a/src/lib/gemini/budget.ts b/src/lib/gemini/budget.ts
+index 6746896..c42842c 100644
+--- a/src/lib/gemini/budget.ts
++++ b/src/lib/gemini/budget.ts
+@@ -26,6 +26,8 @@ export class RequestBudget {
+     return this.times.filter((x) => x > t - MIN).length < this.limits.perMinute && this.times.length < this.limits.perDay;
+   }
+   record(): void { this.prune(); this.times.push(this.now()); this.save(); }
++  /** Annule le dernier envoi enregistré (requête que le serveur n'a pas traitée : 5xx). */
++  refund(): void { this.times.pop(); this.save(); }
+   used(): { day: number; limit: number } { this.prune(); return { day: this.times.length, limit: this.limits.perDay }; }
+   waitSeconds(): number {
+     this.prune();
+diff --git a/src/lib/gemini/client.ts b/src/lib/gemini/client.ts
+index d1ff152..fa9f620 100644
+--- a/src/lib/gemini/client.ts
++++ b/src/lib/gemini/client.ts
+@@ -1,6 +1,10 @@
+-import { AuthError, NetworkError, RateLimitError } from '../errors';
++import { AuthError, BlockedError, NetworkError, RateLimitError, ServerBusyError } from '../errors';
+ 
+ export type Msg = { role: 'user' | 'model'; text: string };
++export type GeminiResult = { text: string; finishReason?: string };
++
++/** Statuts qui signalent une surcharge ou une panne passagère : on réessaie. */
++export const RETRYABLE_STATUS = new Set([500, 502, 503, 504, 529]);
+ 
+ async function retryAfterSec(r: Response): Promise<number> {
+   const h = Number(r.headers.get('retry-after'));
+@@ -14,8 +18,10 @@ async function retryAfterSec(r: Response): Promise<number> {
+   return 30;
+ }
+ 
+-/** Envoie un corps `generateContent` à Gemini et renvoie le texte ; traduit les échecs en erreurs typées. */
+-export async function postGemini(o: { key: string; model: string; body: unknown; fetchImpl?: typeof fetch }): Promise<string> {
++type PostOpts = { key: string; model: string; body: unknown; fetchImpl?: typeof fetch };
++
++/** Envoie un corps `generateContent` à Gemini ; renvoie le texte ET la raison d'arrêt ; traduit les échecs en erreurs typées. */
++export async function postGeminiDetailed(o: PostOpts): Promise<GeminiResult> {
+   const f = o.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+   let r: Response;
+   try {
+@@ -31,20 +37,36 @@ export async function postGemini(o: { key: string; model: string; body: unknown;
+   if (r.status === 429) throw new RateLimitError(await retryAfterSec(r));
+   if (r.status === 401 || r.status === 403) throw new AuthError('Clé refusée');
+   if (r.status === 400 && /api key/i.test(await r.clone().text())) throw new AuthError('Clé refusée');
++  if (RETRYABLE_STATUS.has(r.status)) throw new ServerBusyError(r.status);
+   if (!r.ok) throw new NetworkError(`Gemini a répondu ${r.status}`);
+-  const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+-  const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+-  if (!text) throw new NetworkError('Réponse vide de Gemini');
+-  return text;
++  const j = (await r.json()) as {
++    candidates?: { finishReason?: string; content?: { parts?: { text?: string }[] } }[];
++    promptFeedback?: { blockReason?: string };
++  };
++  const cand = j.candidates?.[0];
++  const text = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
++  const finishReason = cand?.finishReason;
++  if (!text) {
++    if (j.promptFeedback?.blockReason) throw new BlockedError(j.promptFeedback.blockReason);
++    if (finishReason && ['SAFETY', 'RECITATION', 'PROHIBITED_CONTENT', 'BLOCKLIST'].includes(finishReason)) throw new BlockedError(finishReason);
++    throw new NetworkError('Réponse vide de Gemini');
++  }
++  return { text, finishReason };
++}
++
++/** Comme postGeminiDetailed, mais ne renvoie que le texte. */
++export async function postGemini(o: PostOpts): Promise<string> {
++  return (await postGeminiDetailed(o)).text;
++}
++
++export function buildBody(system: string, messages: Msg[]): unknown {
++  return {
++    systemInstruction: { parts: [{ text: system }] },
++    contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
++    generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
++  };
+ }
+ 
+ export function callGemini(o: { key: string; model: string; system: string; messages: Msg[]; fetchImpl?: typeof fetch }): Promise<string> {
+-  return postGemini({
+-    key: o.key, model: o.model, fetchImpl: o.fetchImpl,
+-    body: {
+-      systemInstruction: { parts: [{ text: o.system }] },
+-      contents: o.messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+-      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+-    },
+-  });
++  return postGemini({ key: o.key, model: o.model, fetchImpl: o.fetchImpl, body: buildBody(o.system, o.messages) });
+ }
+diff --git a/src/lib/gemini/journal.ts b/src/lib/gemini/journal.ts
+new file mode 100644
+index 0000000..57269ae
+--- /dev/null
++++ b/src/lib/gemini/journal.ts
+@@ -0,0 +1,25 @@
++/** Journal des appels à Gemini (derniers essais), pour comprendre pourquoi une requête a échoué. */
++export type AttemptEvent = {
++  t: number; model: string; attempt: number;
++  outcome: 'ok' | 'busy' | 'quota' | 'network' | 'auth' | 'other';
++  status?: number; waitMs?: number; ms?: number; message?: string;
++};
++
++const KEY = 'sequentia.journal';
++const MAX = 40;
++let memory: AttemptEvent[] = [];
++
++function read(): AttemptEvent[] {
++  try {
++    const raw = JSON.parse(localStorage.getItem(KEY) ?? '[]') as unknown;
++    return Array.isArray(raw) ? (raw as AttemptEvent[]) : [];
++  } catch { return memory; }
++}
++function write(list: AttemptEvent[]): void {
++  memory = list;
++  try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* stockage indisponible : copie en mémoire seulement */ }
++}
++
++export function logAttempt(e: AttemptEvent): void { write([...read(), e].slice(-MAX)); }
++export function recentAttempts(): AttemptEvent[] { return read(); }
++export function clearJournal(): void { write([]); }
+diff --git a/src/lib/gemini/retry.ts b/src/lib/gemini/retry.ts
+new file mode 100644
+index 0000000..8d9a778
+--- /dev/null
++++ b/src/lib/gemini/retry.ts
+@@ -0,0 +1,96 @@
++import { AuthError, NetworkError, RateLimitError, ServerBusyError } from '../errors';
++import { logAttempt, type AttemptEvent } from './journal';
++
++export type RetryEvent = AttemptEvent & { message: string };
++export type RetryOpts = {
++  /** Modèle principal, puis modèles de secours dans l'ordre. */
++  models: string[];
++  /** Essais par modèle (défaut 4 : attentes de 1, 2 et 4 s entre les essais). */
++  maxAttempts?: number;
++  /** Au-delà de cette attente (secondes), un quota n'est plus attendu : on passe au modèle suivant. */
++  maxQuotaWaitSec?: number;
++  sleep?: (ms: number) => Promise<void>;
++  random?: () => number;
++  now?: () => number;
++  onEvent?: (e: RetryEvent) => void;
++  log?: (e: AttemptEvent) => void;
++};
++
++const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
++
++/**
++ * Exécute `fn` avec reprises. Surcharge (5xx/529) : attente exponentielle avec aléa puis modèle de secours.
++ * Quota court : on attend le délai indiqué. Clé refusée ou erreur inconnue : on s'arrête tout de suite.
++ * Si tout échoue, l'erreur du modèle principal est relancée (c'est la plus parlante).
++ */
++export async function withRetry<T>(fn: (model: string) => Promise<T>, o: RetryOpts): Promise<T> {
++  const models = [...new Set(o.models.filter(Boolean))];
++  if (!models.length) throw new Error('Aucun modèle configuré');
++  const sleep = o.sleep ?? wait;
++  const rnd = o.random ?? Math.random;
++  const now = o.now ?? Date.now;
++  const max = o.maxAttempts ?? 4;
++  const maxQuota = o.maxQuotaWaitSec ?? 20;
++  const log = o.log ?? logAttempt;
++  const emit = (e: Omit<AttemptEvent, 't'>, message: string) => {
++    const full = { ...e, t: now(), message };
++    log(full);
++    o.onEvent?.(full);
++  };
++
++  let primaryError: unknown;
++  for (const [mi, model] of models.entries()) {
++    const next = models[mi + 1];
++    let lastErr: unknown;
++    for (let attempt = 1; attempt <= max; attempt++) {
++      const t0 = now();
++      try {
++        const r = await fn(model);
++        emit({ model, attempt, outcome: 'ok', ms: now() - t0 }, `Réponse reçue (${model})`);
++        return r;
++      } catch (e) {
++        lastErr = e;
++        const ms = now() - t0;
++        if (e instanceof AuthError) { emit({ model, attempt, outcome: 'auth', ms }, 'Clé refusée'); throw e; }
++        if (e instanceof RateLimitError) {
++          if (e.retryAfterSec <= maxQuota && attempt < max) {
++            const w = e.retryAfterSec * 1000 + rnd() * 300;
++            emit({ model, attempt, outcome: 'quota', waitMs: w, ms }, `Quota atteint, nouvel essai dans ${Math.ceil(w / 1000)} s`);
++            await sleep(w);
++            continue;
++          }
++          emit({ model, attempt, outcome: 'quota', ms }, `Quota atteint (${e.retryAfterSec} s)`);
++          if (e.local) throw e;
++          break;
++        }
++        if (e instanceof ServerBusyError) {
++          if (attempt < max) {
++            const w = Math.min(1000 * 2 ** (attempt - 1), 16_000) + rnd() * 500;
++            emit({ model, attempt, outcome: 'busy', status: e.status, waitMs: w, ms },
++              `Serveur surchargé (${e.status}), nouvel essai dans ${Math.ceil(w / 1000)} s (essai ${attempt + 1}/${max})`);
++            await sleep(w);
++            continue;
++          }
++          emit({ model, attempt, outcome: 'busy', status: e.status, ms },
++            next ? `Modèle ${model} indisponible (${e.status}), bascule sur ${next}` : `Modèle ${model} indisponible (${e.status})`);
++          break;
++        }
++        if (e instanceof NetworkError) {
++          if (attempt < 2) {
++            emit({ model, attempt, outcome: 'network', waitMs: 1000, ms }, 'Pas de réponse, nouvel essai dans 1 s');
++            await sleep(1000);
++            continue;
++          }
++          emit({ model, attempt, outcome: 'network', ms }, 'Pas de réponse du réseau');
++          if (mi > 0) break; // un modèle de secours qui échoue ne masque pas l'erreur du principal
++          throw e;
++        }
++        emit({ model, attempt, outcome: 'other', ms }, (e as Error).message ?? 'Erreur');
++        if (mi > 0) break;
++        throw e;
++      }
++    }
++    if (mi === 0) primaryError = lastErr;
++  }
++  throw primaryError;
++}
+diff --git a/src/lib/gemini/robust.ts b/src/lib/gemini/robust.ts
+new file mode 100644
+index 0000000..3a33e1e
+--- /dev/null
++++ b/src/lib/gemini/robust.ts
+@@ -0,0 +1,35 @@
++import { RateLimitError, ServerBusyError } from '../errors';
++import { postGeminiDetailed, type GeminiResult } from './client';
++import type { RequestBudget } from './budget';
++import { withRetry, type RetryEvent, type RetryOpts } from './retry';
++
++export type RobustCfg = {
++  key: string;
++  /** Modèle principal puis modèles de secours. */
++  models: string[];
++  /** Plafonds locaux : chaque tentative est comptée, et remboursée si le serveur était surchargé. */
++  budget?: RequestBudget;
++  onEvent?: (e: RetryEvent) => void;
++  fetchImpl?: typeof fetch;
++  retry?: Partial<RetryOpts>;
++};
++
++/** Liste de modèles à essayer d'après les réglages (principal, puis secours s'il est renseigné). */
++export const modelsOf = (s: { model: string; modelSecours?: string }): string[] =>
++  [s.model, s.modelSecours ?? ''].map((m) => m.trim()).filter(Boolean);
++
++/** Un appel Gemini avec plafond local, reprises, attente exponentielle et modèle de secours. */
++export function robustPost(cfg: RobustCfg, body: unknown): Promise<GeminiResult> {
++  return withRetry(async (model) => {
++    if (cfg.budget) {
++      if (!cfg.budget.canSend()) throw new RateLimitError(cfg.budget.waitSeconds(), true);
++      cfg.budget.record();
++    }
++    try {
++      return await postGeminiDetailed({ key: cfg.key, model, body, fetchImpl: cfg.fetchImpl });
++    } catch (e) {
++      if (e instanceof ServerBusyError) cfg.budget?.refund();
++      throw e;
++    }
++  }, { ...cfg.retry, models: cfg.models, onEvent: cfg.onEvent });
++}
+diff --git a/src/lib/storage/settings.ts b/src/lib/storage/settings.ts
+index 50c1280..de373d3 100644
+--- a/src/lib/storage/settings.ts
++++ b/src/lib/storage/settings.ts
+@@ -1,7 +1,7 @@
+ import type { Mode, ThemeId, Tokens } from '../../theme/themes';
+ 
+ export type Settings = {
+-  geminiKey: string; githubToken: string; owner: string; repo: string; model: string;
++  geminiKey: string; githubToken: string; owner: string; repo: string; model: string; modelSecours: string;
+   maxPerMinute: number; maxPerDay: number; lotPages: number;
+   theme: ThemeId; mode: Mode;
+   themeOverrides: { light?: Partial<Tokens>; dark?: Partial<Tokens> };
+@@ -11,6 +11,7 @@ const KEY = 'sequentia.settings';
+ const defaults = (): Settings => ({
+   geminiKey: '', githubToken: '', owner: '', repo: '',
+   model: 'gemini-3.8-flash', // MODEL par défaut de Fiches/orchestrate.py
++  modelSecours: '', // essayé quand le modèle principal reste surchargé (vide : pas de secours)
+   maxPerMinute: 5, maxPerDay: 100, lotPages: 5,
+   theme: 'd', mode: 'auto', themeOverrides: {},
+ });
+diff --git a/src/theme/apple.css b/src/theme/apple.css
+index 64ab3f5..846ea4e 100644
+--- a/src/theme/apple.css
++++ b/src/theme/apple.css
+@@ -161,3 +161,29 @@ input[type="checkbox"]:active { transform: scale(.88); }
+   .check path { stroke-dashoffset: 0; }
+ }
+ @media print { .nav { display: none !important; } .card { box-shadow: none !important; } }
++
++/* États d'import et d'export : pastilles, barre segmentée, journal des appels.
++   Les couleurs d'état viennent de --success, --danger, --warn et de l'accent du thème. */
++:root { --warn: #a15c00; }
++:root[data-mode="dark"] { --warn: #ffb340; }
++.sbadge { --c: var(--text); display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: var(--r-pill);
++  font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
++.sbadge[data-s="pending"] { --c: color-mix(in srgb, var(--text) 60%, transparent); }
++.sbadge[data-s="running"], .sbadge[data-s="retry"] { --c: var(--accent-text); }
++.sbadge[data-s="ok"] { --c: var(--success); }
++.sbadge[data-s="suspect"] { --c: var(--warn); }
++.sbadge[data-s="failed"] { --c: var(--danger); }
++.sbadge .spin { animation: spin 1s linear infinite; }
++.segbar { display: flex; gap: 3px; height: 8px; margin: 10px 0; }
++.segbar > span { flex: 1; border-radius: 4px; background: var(--tint-hover); }
++.segbar > span[data-s="ok"] { background: var(--success); }
++.segbar > span[data-s="suspect"] { background: var(--warn); }
++.segbar > span[data-s="failed"] { background: var(--danger); }
++.segbar > span[data-s="running"], .segbar > span[data-s="retry"] { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
++.lots { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
++.lots li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }
++.lots .note { color: color-mix(in srgb, var(--text) 70%, transparent); }
++.attempts { margin-top: 12px; font-size: 14px; }
++.attempts ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
++.report { display: grid; gap: 6px; margin-top: 12px; }
++@media (prefers-reduced-motion: reduce) { .sbadge .spin, .segbar > span { animation: none !important; } }
+diff --git a/src/ui/Cours.tsx b/src/ui/Cours.tsx
+index 48022f9..9ee2565 100644
+--- a/src/ui/Cours.tsx
++++ b/src/ui/Cours.tsx
+@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
+ import { splitPdf, type Lot } from '../lib/cours/chunk';
+ import { checkMarkdown, type CoursMeta } from '../lib/cours/checks';
+ import { renderMarkdownPreview } from '../lib/cours/preview';
+-import { ImportQueue } from '../lib/cours/queue';
++import { ImportQueue, type LotInfo } from '../lib/cours/queue';
+ import { saveCours } from '../lib/cours/save';
+-import { transcribeLot, transcribeWithGemini } from '../lib/cours/transcribe';
+-import { ConflictError, RateLimitError } from '../lib/errors';
++import { transcribeLot, transcribeRobust } from '../lib/cours/transcribe';
++import { verifyLot } from '../lib/cours/verify';
++import { ConflictError, NetworkError, RateLimitError } from '../lib/errors';
+ import { RequestBudget } from '../lib/gemini/budget';
++import { modelsOf, type RobustCfg } from '../lib/gemini/robust';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { slugify } from '../lib/slug';
+ import type { Db } from '../lib/storage/db';
+@@ -17,12 +19,13 @@ import type { Problem } from '../lib/types';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
+ import { messageFor } from './messages';
++import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
+ 
+ pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+ 
+ type Meta = Omit<CoursMeta, 'statut'>;
+ type View = { id: string | null; meta: Meta; md: string };
+-type Row = { id: string; done: number; total: number; meta?: Meta };
++type Row = { id: string; done: number; total: number; lots: LotInfo[]; meta?: Meta };
+ 
+ async function renderPdfPage(canvas: HTMLCanvasElement, data: Uint8Array, pageNumber: number): Promise<void> {
+   const doc = await pdfjs.getDocument({ data: data.slice() }).promise;
+@@ -48,14 +51,18 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+   const canvas = useRef<HTMLCanvasElement>(null);
+   const preview = useRef<HTMLDivElement>(null);
+   const [imgUrl, setImgUrl] = useState('');
++  const [live, setLive] = useState('');
++  const [runningId, setRunningId] = useState<string | null>(null);
++  const auto = useRef<{ n: number; timer?: number }>({ n: 0 });
++  useEffect(() => () => window.clearTimeout(auto.current.timer), []);
+ 
+-  const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => '')), [db]);
++  const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => ''), (lot, md) => verifyLot(lot, md)), [db]);
+ 
+   const refresh = useCallback(async () => {
+     if (!db) return;
+     const q = queue();
+     const out: Row[] = [];
+-    for (const id of await q.ids()) out.push({ id, ...(await q.progress(id)), meta: (await db.get(`import-meta:${id}`)) as Meta | undefined });
++    for (const id of await q.ids()) out.push({ id, ...(await q.progress(id)), lots: await q.lotInfos(id), meta: (await db.get(`import-meta:${id}`)) as Meta | undefined });
+     setRows(out);
+     const s = getSettings();
+     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
+@@ -94,22 +101,49 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+     } catch { setMsg("Impossible de lire ce fichier. Vérifie que c'est un PDF, une image ou un fichier texte"); } finally { setBusy(false); }
+   };
+ 
+-  const run = async (id: string) => {
++  /** File d'import branchée sur Gemini : reprises, modèle de secours, plafonds locaux, contrôle de chaque lot. */
++  const buildQueue = (onErr: (e: unknown) => void) => {
+     const s = getSettings();
+-    if (!s.geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+     const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
++    const cfg: RobustCfg = { key: s.geminiKey, models: modelsOf(s), budget, onEvent: (e) => setLive(e.message) };
++    return queue(async (lot) => {
++      try { return await transcribeLot(lot, { llm: (l) => transcribeRobust({ cfg, lot: l }) }); }
++      catch (e) { onErr(e); throw e; }
++    });
++  };
++
++  const run = async (id: string) => {
++    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
++    window.clearTimeout(auto.current.timer);
+     let last: unknown;
+-    setBusy(true); setMsg('');
++    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
+     try {
+-      const q = queue(async (lot) => {
+-        if (!budget.canSend()) { last = new RateLimitError(budget.waitSeconds()); throw last; }
+-        budget.record();
+-        try { return await transcribeLot(lot, { llm: (l) => transcribeWithGemini({ key: s.geminiKey, model: s.model, lot: l }) }); }
+-        catch (e) { last = e; throw e; }
+-      });
+-      const r = await q.run(id);
+-      setMsg(r === 'done' ? 'Transcription terminée. Tu peux relire' : last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
+-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); await refresh(); }
++      const r = await buildQueue((e) => { last = e; }).run(id);
++      if (r === 'done') {
++        auto.current.n = 0;
++        setMsg('Transcription terminée. Relis les lots marqués « À contrôler »');
++      } else {
++        const retryable = last instanceof NetworkError || (last instanceof RateLimitError && last.retryAfterSec <= 120);
++        if (retryable && auto.current.n < 3 && navigator.onLine !== false) {
++          auto.current.n += 1;
++          const delay = last instanceof RateLimitError ? last.retryAfterSec + 1 : 30;
++          setMsg(`${messageFor(last)}. Nouvel essai automatique dans ${delay} s (${auto.current.n}/3). La progression est gardée`);
++          auto.current.timer = window.setTimeout(() => void run(id), delay * 1000);
++        } else {
++          setMsg(last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
++        }
++      }
++    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
++  };
++
++  const rerunLot = async (id: string, i: number) => {
++    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
++    window.clearTimeout(auto.current.timer);
++    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
++    try {
++      const st = await buildQueue(() => undefined).rerun(id, i);
++      setMsg(st.state === 'ok' ? `Lot ${i + 1} relu et vérifié` : `Lot ${i + 1} retranscrit, mais il reste à contrôler`);
++    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
+   };
+ 
+   const openReview = async (id: string) => {
+@@ -207,17 +241,37 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+       {msg && <p role="status">{msg}</p>}
+       <h2 className="titre" style={{ fontSize: 24 }}>Imports en cours</h2>
+       {rows.length === 0 && <div className="card">Aucun import.</div>}
+-      {rows.map((r) => (
+-        <div key={r.id} className="card" style={{ marginBottom: 8 }}>
+-          <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
+-          <progress value={r.done} max={r.total} style={{ display: 'block', width: '100%' }} />
+-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+-            <button className="btn" disabled={busy || r.done >= r.total} onClick={() => void run(r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+-            <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
+-            <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
++      {live && <p role="status" aria-live="polite">{live}</p>}
++      {rows.map((r) => {
++        const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
++        const ok = r.lots.filter((l) => l.state === 'ok').length;
++        const stateOf = (l: LotInfo, i: number) => (runningId === r.id && i === r.done && l.state === 'pending' ? 'running' as const : l.state);
++        return (
++          <div key={r.id} className="card" style={{ marginBottom: 8 }}>
++            <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
++            <SegmentBar label={`${r.done} lots traités sur ${r.total}, ${bad} à contrôler`} segments={r.lots.map((l, i) => ({ state: stateOf(l, i), title: `Lot ${i + 1}` }))} />
++            <details open={bad > 0}>
++              <summary>{ok} lot{ok > 1 ? 's' : ''} vérifié{ok > 1 ? 's' : ''}{bad > 0 ? `, ${bad} à contrôler` : ''}</summary>
++              <ul className="lots">
++                {r.lots.map((l, i) => (
++                  <li key={i}>
++                    <StatusBadge state={stateOf(l, i)} />
++                    <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
++                    <span className="note">{describeLot(l)}</span>
++                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
++                  </li>
++                ))}
++              </ul>
++            </details>
++            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
++              <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
++              <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
++              <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
++            </div>
+           </div>
+-        </div>
+-      ))}
++        );
++      })}
++      <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
+     </div>
+   );
+ }
+diff --git a/src/ui/Generate.tsx b/src/ui/Generate.tsx
+index 7e5196b..f0e4684 100644
+--- a/src/ui/Generate.tsx
++++ b/src/ui/Generate.tsx
+@@ -11,6 +11,7 @@ import { exportDraft, type Db, type Draft } from '../lib/storage/db';
+ import { getSettings } from '../lib/storage/settings';
+ import type { Brief, Fiche, Problem } from '../lib/types';
+ import { makeGenerateDeps } from './geminiDeps';
++import { AttemptLog, StatusBadge } from './status';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
+ import { messageFor } from './messages';
+@@ -48,6 +49,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+   const [problems, setProblems] = useState<Problem[]>([]);
+   const [drafts, setDrafts] = useState<Draft[]>([]);
+   const [used, setUsed] = useState('');
++  const [live, setLive] = useState('');
+ 
+   const refresh = useCallback(async () => {
+     if (db) setDrafts(await db.listDrafts());
+@@ -79,7 +81,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+       try { src = await loadSources(repo, db, brief); }
+       catch (e) { setMsg(messageFor(e, { source: 'github' })); return; }
+       const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief });
+-      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour));
++      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour, (e) => setLive(e.message)));
+       const fiche: Fiche | null = result.fiche
+         ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
+         : null;
+@@ -92,7 +94,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+       await refresh();
+     } catch (e) {
+       setMsg(messageFor(e));
+-    } finally { setBusy(false); }
++    } finally { setBusy(false); setLive(''); }
+   };
+ 
+   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
+@@ -115,7 +117,9 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+         <FxButton fx="magnetic" className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</FxButton>
+         <span style={{ marginLeft: 12 }}>Requêtes aujourd'hui : {used}</span>
+       </div>
++      {busy && <p role="status" aria-live="polite"><StatusBadge state={live ? 'retry' : 'running'}>{live || `Tour ${tour} sur 4`}</StatusBadge></p>}
+       {msg && <p role="status">{msg}</p>}
++      <AttemptLog refreshKey={`${msg}|${busy}`} />
+       {problems.length > 0 && <ul>{problems.map((p, i) => <li key={i}>{p.code}{p.path ? ` ${p.path}` : ''} : {p.message}</li>)}</ul>}
+       <h2 className="titre" style={{ fontSize: 24 }}>Brouillons</h2>
+       {drafts.length === 0 && <div className="card">Aucun brouillon.</div>}
+diff --git a/src/ui/Library.tsx b/src/ui/Library.tsx
+index 4a24dd9..e2153a5 100644
+--- a/src/ui/Library.tsx
++++ b/src/ui/Library.tsx
+@@ -1,9 +1,10 @@
+ import { useEffect, useMemo, useRef, useState } from 'react';
+ import AsyncButton from './AsyncButton';
+ import { SelectField, TextField } from './Field';
+-import { FxButton } from './fx';
+ import { printPages } from '../lib/export/pdf';
+ import { exportPng, isLikelyBlank } from '../lib/export/png';
++import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
++import { StatusBadge } from './status';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
+ import { renderFiche } from '../lib/render/renderFiche';
+@@ -45,6 +46,25 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+ 
+   useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
+ 
++  const [report, setReport] = useState<PdfReport | null>(null);
++
++  const exporterPdf = async (): Promise<boolean> => {
++    if (!sel || !fiche) return false;
++    setReport(null); setMsg('');
++    const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
++    try {
++      const { bytes, report: rep } = await exportVerifiedPdf(pages, fiche.meta.format ?? 'fiche');
++      setReport(rep);
++      if (!bytes) return false;
++      const a = document.createElement('a');
++      a.href = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
++      a.download = `${sel.slug}.pdf`;
++      a.click();
++      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
++      return true;
++    } catch { setMsg("La fabrication du PDF a échoué. Utilise l'impression ou l'export PNG"); return false; }
++  };
++
+   const exporterPng = async (): Promise<boolean> => {
+     if (!sel) return false;
+     const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+@@ -88,7 +108,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+       {sel && (
+         <div className="card" style={{ marginTop: 12 }}>
+           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+-            {fiche && <FxButton fx="spotlight" className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</FxButton>}
++            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF (vérifié)</AsyncButton>}
++            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer (PDF vectoriel)</button>}
+             {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
+             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
+             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
+@@ -99,6 +120,12 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+               }}>{fiche.meta.exemple ? 'Retirer des exemples' : 'Marquer comme exemple de style'}</button>
+             )}
+           </div>
++          {report && (
++            <div className="report" role="status">
++              <StatusBadge state={report.ok ? 'ok' : 'failed'}>{report.ok ? `PDF créé · ${report.pages} page${report.pages > 1 ? 's' : ''} · ${Math.round(report.bytes / 1024)} Ko · aucune page vide` : 'PDF non créé'}</StatusBadge>
++              {report.problems.map((p, i) => <span key={i}>{p}</span>)}
++            </div>
++          )}
+           {fiche && <div className="print-area export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
+           {cours && <pre style={{ whiteSpace: 'pre-wrap' }}>{cours}</pre>}
+         </div>
+diff --git a/src/ui/Settings.tsx b/src/ui/Settings.tsx
+index 10b5578..31ca1a3 100644
+--- a/src/ui/Settings.tsx
++++ b/src/ui/Settings.tsx
+@@ -32,7 +32,7 @@ export default function Settings() {
+   const [s, setS] = useState<S>(getSettings());
+   const [msg, setMsg] = useState('');
+   const set = <K extends keyof S>(k: K, v: S[K]) => { saveSettings({ [k]: v } as Partial<S>); setS(getSettings()); window.dispatchEvent(new Event('sequentia-settings-changed')); };
+-  const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model', label: string, secret = false) => (
++  const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model' | 'modelSecours', label: string, secret = false) => (
+     <TextField label={label} type={secret ? 'password' : 'text'} autoComplete="off" value={s[k]} onChange={(e) => set(k, e.target.value)} />
+   );
+   const num = (k: 'maxPerMinute' | 'maxPerDay' | 'lotPages', label: string) => (
+@@ -46,6 +46,7 @@ export default function Settings() {
+       {text('owner', 'Propriétaire du dépôt')}
+       {text('repo', 'Nom du dépôt')}
+       {text('model', 'Modèle Gemini')}
++      {text('modelSecours', 'Modèle de secours (optionnel, utilisé si le principal est surchargé)')}
+       {num('maxPerMinute', 'Requêtes par minute')}
+       {num('maxPerDay', 'Requêtes par jour')}
+       {num('lotPages', 'Pages par lot (import de cours)')}
+diff --git a/src/ui/geminiDeps.ts b/src/ui/geminiDeps.ts
+index 25aba96..7e32f2d 100644
+--- a/src/ui/geminiDeps.ts
++++ b/src/ui/geminiDeps.ts
+@@ -1,6 +1,7 @@
+-import { RateLimitError } from '../lib/errors';
+-import { callGemini } from '../lib/gemini/client';
++import { buildBody } from '../lib/gemini/client';
+ import { RequestBudget } from '../lib/gemini/budget';
++import { modelsOf, robustPost } from '../lib/gemini/robust';
++import type { RetryEvent } from '../lib/gemini/retry';
+ import type { GenerateDeps } from '../lib/generate/loop';
+ import { checkOverflow, renderFiche } from '../lib/render/renderFiche';
+ import { lintLatex } from '../lib/schema/lint';
+@@ -19,16 +20,18 @@ export function renderOffscreen(f: Fiche): { katexErrors: string[]; overflow: nu
+   } finally { host.remove(); }
+ }
+ 
+-/** Dépendances de la boucle de génération : Gemini (avec plafonds locaux), validation, lint, rendu. */
+-export function makeGenerateDeps(s: Settings, system: string, onTour: (n: number) => void): GenerateDeps {
++/**
++ * Dépendances de la boucle de génération : Gemini (plafonds locaux, reprises, modèle de secours),
++ * validation, lint, rendu. `onEvent` reçoit chaque tentative (« Serveur surchargé, nouvel essai dans 2 s »).
++ */
++export function makeGenerateDeps(s: Settings, system: string, onTour: (n: number) => void, onEvent?: (e: RetryEvent) => void): GenerateDeps {
+   const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
+   let n = 0;
+   return {
+     llm: async (messages) => {
+-      if (!budget.canSend()) throw new RateLimitError(budget.waitSeconds());
+-      budget.record();
+       onTour(++n);
+-      return callGemini({ key: s.geminiKey, model: s.model, system, messages });
++      const r = await robustPost({ key: s.geminiKey, models: modelsOf(s), budget, onEvent }, buildBody(system, messages));
++      return r.text;
+     },
+     validate: validateFiche, lint: lintLatex, render: renderOffscreen,
+   };
+diff --git a/src/ui/messages.ts b/src/ui/messages.ts
+index 0a8bdbd..73b9213 100644
+--- a/src/ui/messages.ts
++++ b/src/ui/messages.ts
+@@ -1,9 +1,12 @@
+-import { AuthError, ConflictError, NetworkError, NotFoundError, RateLimitError } from '../lib/errors';
++import { AuthError, BlockedError, ConflictError, NetworkError, NotFoundError, RateLimitError, ServerBusyError, TruncatedError } from '../lib/errors';
+ 
+ /** Message pour l'utilisateur : ce qui s'est passé, puis quoi faire, sans jargon. */
+ export function messageFor(err: unknown, ctx: { offline?: boolean; source?: 'gemini' | 'github' } = {}): string {
+   const source = ctx.source ?? 'gemini';
+   if (err instanceof RateLimitError) return `Quota atteint. Réessaie dans ${err.retryAfterSec} secondes`;
++  if (err instanceof ServerBusyError) return `${source === 'github' ? 'GitHub' : 'Gemini'} est surchargé (${err.status}) malgré plusieurs essais. Réessaie dans quelques minutes, ta progression est gardée`;
++  if (err instanceof TruncatedError) return 'La réponse était trop longue et a été coupée. Réduis le nombre de pages par lot dans Réglages';
++  if (err instanceof BlockedError) return `Gemini a refusé de traiter ce contenu (${err.reason}). Reformule ou saute cette page`;
+   if (err instanceof NetworkError) {
+     if (ctx.offline) return 'Hors connexion. Enregistrement impossible, ton brouillon est conservé';
+     return source === 'github' ? "GitHub n'a pas répondu. Réessayer" : "Gemini n'a pas répondu. Réessayer";
+diff --git a/src/ui/status.tsx b/src/ui/status.tsx
+new file mode 100644
+index 0000000..7df33ca
+--- /dev/null
++++ b/src/ui/status.tsx
+@@ -0,0 +1,64 @@
++import { useEffect, useState, type ReactNode } from 'react';
++import { clearJournal, recentAttempts, type AttemptEvent } from '../lib/gemini/journal';
++import type { LotStatus } from '../lib/cours/queue';
++
++export type UiState = 'pending' | 'running' | 'ok' | 'suspect' | 'failed' | 'retry';
++const LABEL: Record<UiState, string> = {
++  pending: 'En attente', running: 'En cours', ok: 'Vérifié', suspect: 'À contrôler', failed: 'Échec', retry: 'Nouvel essai',
++};
++
++function Icon({ state }: { state: UiState }) {
++  const p = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 3, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
++  if (state === 'ok') return <svg {...p}><path d="M5 13l4 4L19 7" /></svg>;
++  if (state === 'suspect') return <svg {...p}><path d="M12 4l9 16H3z" /><path d="M12 10v4M12 17.5v.01" /></svg>;
++  if (state === 'failed') return <svg {...p}><path d="M6 6l12 12M18 6L6 18" /></svg>;
++  if (state === 'running' || state === 'retry') return <svg {...p} className="spin"><path d="M21 12a9 9 0 0 0-9-9" /></svg>;
++  return <svg {...p}><circle cx="12" cy="12" r="8" /></svg>;
++}
++
++/** Pastille d'état : l'icône et le texte portent le sens, la couleur ne fait que le renforcer. */
++export function StatusBadge({ state, children }: { state: UiState; children?: ReactNode }) {
++  return <span className="sbadge" data-s={state}><Icon state={state} /><span>{children ?? LABEL[state]}</span></span>;
++}
++
++/** Barre segmentée : un segment par lot, coloré selon son état. */
++export function SegmentBar({ segments, label }: { segments: { state: UiState; title: string }[]; label: string }) {
++  return (
++    <div className="segbar" role="img" aria-label={label}>
++      {segments.map((s, i) => <span key={i} data-s={s.state} title={`${s.title} : ${LABEL[s.state]}`} />)}
++    </div>
++  );
++}
++
++/** Phrase de résumé d'un lot, pour la liste « Imports en cours ». */
++export function describeLot(l: LotStatus): string {
++  if (l.state === 'pending') return 'pas encore traité';
++  if (l.state === 'failed' || l.state === 'suspect') return (l.notes ?? []).join(' · ') || 'à relire';
++  const bits: string[] = [];
++  if (l.coverage !== undefined) bits.push(`couverture ${Math.round(l.coverage * 100)} %`);
++  if (l.split) bits.push('retranscrit page par page');
++  return bits.join(' · ') || 'repères de page contrôlés';
++}
++
++const OUTCOME: Record<AttemptEvent['outcome'], string> = { ok: 'ok', busy: 'surchargé', quota: 'quota', network: 'réseau', auth: 'clé refusée', other: 'erreur' };
++
++/** Journal des derniers appels (modèle, essai, résultat, durée) : sert à voir quel modèle échoue et à quelle fréquence. */
++export function AttemptLog({ refreshKey }: { refreshKey?: unknown }) {
++  const [list, setList] = useState<AttemptEvent[]>([]);
++  useEffect(() => { setList(recentAttempts().slice().reverse()); }, [refreshKey]);
++  if (list.length === 0) return null;
++  return (
++    <details className="attempts">
++      <summary>Détails des appels ({list.length})</summary>
++      <ul>
++        {list.slice(0, 15).map((e, i) => (
++          <li key={i}>
++            <StatusBadge state={e.outcome === 'ok' ? 'ok' : e.outcome === 'busy' || e.outcome === 'quota' || e.outcome === 'network' ? 'retry' : 'failed'}>{OUTCOME[e.outcome]}{e.status ? ` ${e.status}` : ''}</StatusBadge>{' '}
++            {e.model} · essai {e.attempt}{e.ms !== undefined ? ` · ${(e.ms / 1000).toFixed(1)} s` : ''} · {new Date(e.t).toLocaleTimeString('fr-FR')}
++          </li>
++        ))}
++      </ul>
++      <button className="btn ghost" onClick={() => { clearJournal(); setList([]); }}>Effacer le journal</button>
++    </details>
++  );
++}
+diff --git a/tests/gemini2.test.ts b/tests/gemini2.test.ts
+new file mode 100644
+index 0000000..32abe25
+--- /dev/null
++++ b/tests/gemini2.test.ts
+@@ -0,0 +1,86 @@
++import { describe, expect, it, vi } from 'vitest';
++import { postGeminiDetailed } from '../src/lib/gemini/client';
++import { RequestBudget } from '../src/lib/gemini/budget';
++import { modelsOf, robustPost } from '../src/lib/gemini/robust';
++import { transcribeRobust } from '../src/lib/cours/transcribe';
++import { BlockedError, NetworkError, RateLimitError, ServerBusyError, TruncatedError } from '../src/lib/errors';
++import { messageFor } from '../src/ui/messages';
++
++const resp = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
++const ok = (text: string, finishReason = 'STOP') => resp(200, { candidates: [{ finishReason, content: { parts: [{ text }] } }] });
++const post = (f: () => Promise<Response>) => postGeminiDetailed({ key: 'K', model: 'm', body: {}, fetchImpl: vi.fn(f) as unknown as typeof fetch });
++const lot = { index: 0, fromPage: 1, toPage: 2, data: new Uint8Array([1, 2, 3]) };
++
++describe('postGeminiDetailed', () => {
++  it('529, 503, 500, 502 et 504 donnent ServerBusyError avec le code', async () => {
++    for (const s of [500, 502, 503, 504, 529]) await expect(post(async () => resp(s))).rejects.toMatchObject({ name: 'ServerBusyError', status: s });
++  });
++  it('ServerBusyError reste une NetworkError', async () => {
++    await expect(post(async () => resp(529))).rejects.toBeInstanceOf(NetworkError);
++  });
++  it('renvoie la raison d\'arrêt', async () => {
++    expect(await post(async () => ok('x', 'MAX_TOKENS'))).toEqual({ text: 'x', finishReason: 'MAX_TOKENS' });
++  });
++  it('contenu bloqué : BlockedError', async () => {
++    await expect(post(async () => resp(200, { promptFeedback: { blockReason: 'SAFETY' } }))).rejects.toBeInstanceOf(BlockedError);
++  });
++  it('réponse vide sans motif : NetworkError', async () => {
++    await expect(post(async () => resp(200, { candidates: [{ content: { parts: [] } }] }))).rejects.toBeInstanceOf(NetworkError);
++  });
++});
++
++describe('robustPost', () => {
++  const fast = { sleep: async () => {}, random: () => 0, log: () => {} };
++  it('529 puis succès : la tentative en échec est remboursée dans le budget', async () => {
++    const budget = new RequestBudget({ perMinute: 10, perDay: 100 });
++    const seq = [resp(529), ok('{"a":1}')];
++    const f = vi.fn(async () => seq.shift() as Response);
++    const r = await robustPost({ key: 'K', models: ['m'], budget, fetchImpl: f as unknown as typeof fetch, retry: fast }, {});
++    expect(r.text).toBe('{"a":1}');
++    expect(f).toHaveBeenCalledTimes(2);
++    expect(budget.used().day).toBe(1);
++  });
++  it('plafond local atteint pour longtemps : aucun appel réseau', async () => {
++    const budget = new RequestBudget({ perMinute: 1, perDay: 100 });
++    budget.record();
++    const f = vi.fn();
++    await expect(robustPost({ key: 'K', models: ['m'], budget, fetchImpl: f as unknown as typeof fetch, retry: fast }, {})).rejects.toBeInstanceOf(RateLimitError);
++    expect(f).not.toHaveBeenCalled();
++  });
++  it('modèle principal surchargé : le secours répond', async () => {
++    const urls: string[] = [];
++    const f = vi.fn(async (u: string) => { urls.push(u); return u.includes('/models/p:') ? resp(529) : ok('ok'); });
++    const r = await robustPost({ key: 'K', models: ['p', 's'], fetchImpl: f as unknown as typeof fetch, retry: fast }, {});
++    expect(r.text).toBe('ok');
++    expect(urls.filter((u) => u.includes('/models/p:')).length).toBe(4);
++    expect(urls.filter((u) => u.includes('/models/s:')).length).toBe(1);
++  });
++});
++
++describe('modelsOf', () => {
++  it('principal puis secours, sans vide ni espace', () => {
++    expect(modelsOf({ model: 'a', modelSecours: ' b ' })).toEqual(['a', 'b']);
++    expect(modelsOf({ model: 'a', modelSecours: '' })).toEqual(['a']);
++  });
++});
++
++describe('transcribeRobust', () => {
++  const fast = { sleep: async () => {}, random: () => 0, log: () => {} };
++  it('refuse une transcription coupée (MAX_TOKENS)', async () => {
++    const f = vi.fn(async () => ok('# début…', 'MAX_TOKENS'));
++    await expect(transcribeRobust({ cfg: { key: 'K', models: ['m'], fetchImpl: f as unknown as typeof fetch, retry: fast }, lot })).rejects.toBeInstanceOf(TruncatedError);
++  });
++  it('renvoie le texte quand tout va bien', async () => {
++    const f = vi.fn(async () => ok('# Cours'));
++    expect(await transcribeRobust({ cfg: { key: 'K', models: ['m'], fetchImpl: f as unknown as typeof fetch, retry: fast }, lot })).toBe('# Cours');
++  });
++});
++
++describe('messageFor', () => {
++  it('distingue surcharge, coupure et contenu refusé', () => {
++    expect(messageFor(new ServerBusyError(529))).toContain('surchargé (529)');
++    expect(messageFor(new TruncatedError())).toContain('Réduis le nombre de pages');
++    expect(messageFor(new BlockedError('SAFETY'))).toContain('SAFETY');
++    expect(messageFor(new NetworkError())).toBe("Gemini n'a pas répondu. Réessayer");
++  });
++});
+diff --git a/tests/pdfbuild.test.ts b/tests/pdfbuild.test.ts
+new file mode 100644
+index 0000000..5bc654e
+--- /dev/null
++++ b/tests/pdfbuild.test.ts
+@@ -0,0 +1,38 @@
++import { PDFDocument } from 'pdf-lib';
++import { describe, expect, it } from 'vitest';
++import { buildPdfFromPngs, isBlankPixels, pageSizePt, verifyPdf } from '../src/lib/export/pdfBuild';
++
++// PNG 1×1 pixel
++const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
++const rgba = (n: number, f: (i: number) => [number, number, number]) => Uint8ClampedArray.from({ length: n * 4 }, (_, k) => { const [r, g, b] = f(Math.floor(k / 4)); return [r, g, b, 255][k % 4]; });
++
++describe('isBlankPixels', () => {
++  it('une page blanche est vide', () => expect(isBlankPixels(rgba(1000, () => [255, 255, 255]))).toBe(true));
++  it('une page presque blanche avec 2 % de pixels sombres ne l\'est pas', () => {
++    expect(isBlankPixels(rgba(1000, (i) => (i % 50 === 0 ? [0, 0, 0] : [255, 255, 255])))).toBe(false);
++  });
++  it('un tableau vide est vide', () => expect(isBlankPixels([])).toBe(true));
++});
++
++describe('buildPdfFromPngs et verifyPdf', () => {
++  it('fabrique un PDF de 3 pages A4 et le relit', async () => {
++    const bytes = await buildPdfFromPngs([PNG, PNG, PNG], 'fiche');
++    const doc = await PDFDocument.load(bytes);
++    expect(doc.getPageCount()).toBe(3);
++    expect(doc.getPage(0).getSize()).toEqual({ width: pageSizePt('fiche').width, height: pageSizePt('fiche').height });
++    const r = await verifyPdf(bytes, 3);
++    expect(r.pages).toBe(3);
++    expect(r.problems.filter((p) => !p.includes('petit'))).toEqual([]);
++  });
++  it('signale un nombre de pages inattendu', async () => {
++    const r = await verifyPdf(await buildPdfFromPngs([PNG], 'post'), 2);
++    expect(r.ok).toBe(false);
++    expect(r.problems.join(' ')).toContain('1 page au lieu de 2');
++  });
++  it('signale un fichier qui n\'est pas un PDF', async () => {
++    const r = await verifyPdf(new Uint8Array([1, 2, 3, 4, 5, 6]), 1);
++    expect(r.ok).toBe(false);
++    expect(r.problems).toContain('En-tête PDF absent');
++    expect(r.problems).toContain('Le PDF ne se relit pas');
++  });
++});
+diff --git a/tests/queue2.test.ts b/tests/queue2.test.ts
+new file mode 100644
+index 0000000..8a9ef01
+--- /dev/null
++++ b/tests/queue2.test.ts
+@@ -0,0 +1,92 @@
++import { PDFDocument } from 'pdf-lib';
++import { describe, expect, it } from 'vitest';
++import { splitPdf, type Lot } from '../src/lib/cours/chunk';
++import { checkMarkdown } from '../src/lib/cours/checks';
++import { ImportQueue } from '../src/lib/cours/queue';
++import { verifyLot } from '../src/lib/cours/verify';
++import { BlockedError, RateLimitError, ServerBusyError, TruncatedError } from '../src/lib/errors';
++import { openDb } from '../src/lib/storage/db';
++
++const lot = (i: number): Lot => ({ index: i, fromPage: i * 2 + 1, toPage: i * 2 + 2, data: new Uint8Array([i, 1, 2]), mime: 'image/png' });
++const pages = (l: Lot) => Array.from({ length: l.toPage - l.fromPage + 1 }, (_, k) => `<!-- page ${l.fromPage + k} -->\nTexte suffisamment long.`).join('\n\n');
++const verify = (l: Lot, md: string) => verifyLot(l, md, { extractText: async () => null });
++
++describe('ImportQueue : contrôle de chaque lot', () => {
++  it('marque suspect le lot dont il manque une page, et garde les autres vérifiés', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => (l.index === 1 ? `<!-- page 3 -->\nTexte suffisamment long.` : pages(l)), verify);
++    await q.enqueue('c', [lot(0), lot(1), lot(2)]);
++    expect(await q.run('c')).toBe('done');
++    const infos = await q.lotInfos('c');
++    expect(infos.map((i) => i.state)).toEqual(['ok', 'suspect', 'ok']);
++    expect(infos[1].missing).toEqual([4]);
++  });
++  it('un lot relancé repasse à ok quand la nouvelle transcription est complète', async () => {
++    let bon = false;
++    const q = new ImportQueue(await openDb(), async (l) => (l.index === 0 && !bon ? `<!-- page 1 -->\nTexte suffisamment long.` : pages(l)), verify);
++    await q.enqueue('c', [lot(0), lot(1)]);
++    await q.run('c');
++    expect((await q.lotInfos('c'))[0].state).toBe('suspect');
++    bon = true;
++    expect((await q.rerun('c', 0)).state).toBe('ok');
++    expect((await q.lotInfos('c')).map((i) => i.state)).toEqual(['ok', 'ok']);
++  });
++  it('les lots pas encore traités sont en attente ; la pause garde ce qui est fait', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => { if (l.index === 1) throw new ServerBusyError(529); return pages(l); }, verify);
++    await q.enqueue('c', [lot(0), lot(1), lot(2)]);
++    expect(await q.run('c')).toBe('paused');
++    expect((await q.lotInfos('c')).map((i) => i.state)).toEqual(['ok', 'pending', 'pending']);
++  });
++  it('un quota fait aussi une pause', async () => {
++    const q = new ImportQueue(await openDb(), async () => { throw new RateLimitError(10); }, verify);
++    await q.enqueue('c', [lot(0)]);
++    expect(await q.run('c')).toBe('paused');
++  });
++  it("rerun refuse un lot qui n'a pas encore été traité", async () => {
++    const q = new ImportQueue(await openDb(), async (l) => pages(l), verify);
++    await q.enqueue('c', [lot(0)]);
++    await expect(q.rerun('c', 0)).rejects.toThrow('pas encore traité');
++  });
++  it('sans fonction de contrôle, le comportement historique est conservé', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => `# lot ${l.index}`);
++    await q.enqueue('c', [lot(0), lot(1)]);
++    expect(await q.run('c')).toBe('done');
++    expect(await q.markdown('c')).toBe('# lot 0\n\n# lot 1');
++  });
++});
++
++describe('ImportQueue : réponse tronquée', () => {
++  it('retranscrit le lot page par page et le signale', async () => {
++    const b = await (async () => { const d = await PDFDocument.create(); for (let i = 0; i < 3; i++) d.addPage([200, 200]); const u = await d.save(); return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer; })();
++    const [big] = await splitPdf(b, 3);
++    const appels: [number, number][] = [];
++    const q = new ImportQueue(await openDb(), async (l) => {
++      appels.push([l.fromPage, l.toPage]);
++      if (l.toPage > l.fromPage) throw new TruncatedError();
++      return `<!-- page ${l.fromPage} -->\nTexte suffisamment long.`;
++    }, verify);
++    await q.enqueue('c', [big]);
++    expect(await q.run('c')).toBe('done');
++    expect(appels).toEqual([[1, 3], [1, 1], [2, 2], [3, 3]]);
++    const [info] = await q.lotInfos('c');
++    expect(info.state).toBe('ok');
++    expect(info.split).toBe(true);
++    expect(await q.markdown('c')).toContain('<!-- page 3 -->');
++  });
++  it('une seule page tronquée : lot en échec, avec un repère visible dans le texte', async () => {
++    const q = new ImportQueue(await openDb(), async () => { throw new TruncatedError(); }, verify);
++    await q.enqueue('c', [{ index: 0, fromPage: 1, toPage: 1, data: new Uint8Array([1]), mime: 'image/png' }]);
++    expect(await q.run('c')).toBe('done');
++    expect((await q.lotInfos('c'))[0].state).toBe('failed');
++    const md = await q.markdown('c');
++    expect(md).toContain('[lot non transcrit');
++    expect(checkMarkdown(`# T\n${md}`).some((p) => p.message.includes('non transcrit'))).toBe(true);
++  });
++  it('contenu refusé : lot en échec avec le motif, sans bloquer les suivants', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => { if (l.index === 0) throw new BlockedError('SAFETY'); return pages(l); }, verify);
++    await q.enqueue('c', [lot(0), lot(1)]);
++    expect(await q.run('c')).toBe('done');
++    const infos = await q.lotInfos('c');
++    expect(infos.map((i) => i.state)).toEqual(['failed', 'ok']);
++    expect(infos[0].notes?.join(' ')).toContain('SAFETY');
++  });
++});
+diff --git a/tests/retry.test.ts b/tests/retry.test.ts
+new file mode 100644
+index 0000000..47ac830
+--- /dev/null
++++ b/tests/retry.test.ts
+@@ -0,0 +1,77 @@
++import { describe, expect, it } from 'vitest';
++import { withRetry } from '../src/lib/gemini/retry';
++import { AuthError, NetworkError, RateLimitError, ServerBusyError } from '../src/lib/errors';
++
++function setup(models: string[], extra: Record<string, unknown> = {}) {
++  const sleeps: number[] = [];
++  const events: string[] = [];
++  const o = { models, sleep: async (ms: number) => { sleeps.push(ms); }, random: () => 0, log: () => {}, onEvent: (e: { message: string }) => events.push(e.message), ...extra };
++  return { sleeps, events, o };
++}
++
++describe('withRetry', () => {
++  it('529 deux fois puis succès : attentes de 1 s puis 2 s', async () => {
++    const { sleeps, o } = setup(['a']);
++    let n = 0;
++    const r = await withRetry(async () => { if (++n < 3) throw new ServerBusyError(529); return 'ok'; }, o);
++    expect(r).toBe('ok');
++    expect(n).toBe(3);
++    expect(sleeps).toEqual([1000, 2000]);
++  });
++  it('quatre échecs sur le principal : bascule sur le modèle de secours', async () => {
++    const { sleeps, events, o } = setup(['a', 'b']);
++    const calls: string[] = [];
++    const r = await withRetry(async (m) => { calls.push(m); if (m === 'a') throw new ServerBusyError(529); return 'via-' + m; }, o);
++    expect(r).toBe('via-b');
++    expect(calls).toEqual(['a', 'a', 'a', 'a', 'b']);
++    expect(sleeps).toEqual([1000, 2000, 4000]);
++    expect(events.some((m) => m.includes('bascule sur b'))).toBe(true);
++  });
++  it("si tout échoue, relance l'erreur du modèle principal, pas celle du secours", async () => {
++    const { o } = setup(['a', 'b']);
++    await expect(withRetry(async (m) => { throw new ServerBusyError(m === 'a' ? 529 : 503); }, o)).rejects.toMatchObject({ status: 529 });
++  });
++  it('un modèle de secours inexistant (404) ne masque pas la surcharge du principal', async () => {
++    const { o } = setup(['a', 'b']);
++    await expect(withRetry(async (m) => { throw m === 'a' ? new ServerBusyError(529) : new NetworkError('Gemini a répondu 404'); }, o)).rejects.toMatchObject({ status: 529 });
++  });
++  it('clé refusée : arrêt immédiat, sans secours', async () => {
++    const { o } = setup(['a', 'b']);
++    let n = 0;
++    await expect(withRetry(async () => { n++; throw new AuthError(); }, o)).rejects.toBeInstanceOf(AuthError);
++    expect(n).toBe(1);
++  });
++  it('quota court : attend le délai indiqué puis réessaie', async () => {
++    const { sleeps, o } = setup(['a']);
++    let n = 0;
++    expect(await withRetry(async () => { if (++n === 1) throw new RateLimitError(5); return 'ok'; }, o)).toBe('ok');
++    expect(sleeps).toEqual([5000]);
++  });
++  it('quota long de Gemini : passe au modèle suivant (le quota est par modèle)', async () => {
++    const { sleeps, o } = setup(['a', 'b']);
++    const r = await withRetry(async (m) => { if (m === 'a') throw new RateLimitError(60); return 'ok-' + m; }, o);
++    expect(r).toBe('ok-b');
++    expect(sleeps).toEqual([]);
++  });
++  it('plafond local long : arrêt immédiat, le secours ne servirait à rien', async () => {
++    const { o } = setup(['a', 'b']);
++    const calls: string[] = [];
++    await expect(withRetry(async (m) => { calls.push(m); throw new RateLimitError(60, true); }, o)).rejects.toMatchObject({ local: true });
++    expect(calls).toEqual(['a']);
++  });
++  it('réseau coupé : un seul nouvel essai, puis erreur', async () => {
++    const { o } = setup(['a', 'b']);
++    let n = 0;
++    await expect(withRetry(async () => { n++; throw new NetworkError(); }, o)).rejects.toBeInstanceOf(NetworkError);
++    expect(n).toBe(2);
++  });
++  it('erreur inconnue : relancée telle quelle, sans reprise', async () => {
++    const { o } = setup(['a']);
++    let n = 0;
++    await expect(withRetry(async () => { n++; throw new Error('boum'); }, o)).rejects.toThrow('boum');
++    expect(n).toBe(1);
++  });
++  it('sans modèle : erreur explicite', async () => {
++    await expect(withRetry(async () => 1, { models: [] })).rejects.toThrow('Aucun modèle');
++  });
++});
+diff --git a/tests/verify.test.ts b/tests/verify.test.ts
+new file mode 100644
+index 0000000..957c1ff
+--- /dev/null
++++ b/tests/verify.test.ts
+@@ -0,0 +1,72 @@
++import { describe, expect, it } from 'vitest';
++import { checkPageMarkers, coverage, splitByPage, verifyLot } from '../src/lib/cours/verify';
++
++const lot = { index: 1, fromPage: 6, toPage: 8, data: new Uint8Array([1]) };
++const md = (...pages: number[]) => pages.map((p) => `<!-- page ${p} -->\nTexte de la page ${p} avec suffisamment de contenu.`).join('\n\n');
++const texte = 'Théorème fondamental intégrale continue dérivable primitive fonction intervalle borne';
++
++describe('checkPageMarkers', () => {
++  it('tout est présent', () => expect(checkPageMarkers(md(6, 7, 8), lot)).toEqual({ missing: [], unexpected: [], duplicated: [], ordered: true }));
++  it('repère manquant, inattendu, répété, désordre', () => {
++    const r = checkPageMarkers(md(6, 8, 8, 3), lot);
++    expect(r.missing).toEqual([7]);
++    expect(r.unexpected).toEqual([3]);
++    expect(r.duplicated).toEqual([8]);
++    expect(r.ordered).toBe(false);
++  });
++});
++
++describe('coverage', () => {
++  it('compte les mots de 5 lettres ou plus, sans accents ni casse', () => {
++    expect(coverage('Intégrale continue primitive', 'integrale CONTINUE').ratio).toBeCloseTo(2 / 3);
++  });
++  it('référence sans mots : 1', () => expect(coverage('a b 12', 'x').ratio).toBe(1));
++});
++
++describe('splitByPage', () => {
++  it('découpe par repère', () => expect([...splitByPage(md(6, 7)).keys()]).toEqual([6, 7]));
++});
++
++describe('verifyLot', () => {
++  const pdf = async () => [texte, texte, texte];
++  it('ok : repères présents et texte retrouvé', async () => {
++    const m = [6, 7, 8].map((p) => `<!-- page ${p} -->\n${texte}`).join('\n\n');
++    const r = await verifyLot(lot, m, { extractText: pdf });
++    expect(r.state).toBe('ok');
++    expect(r.coverage).toBe(1);
++  });
++  it('suspect : page manquante', async () => {
++    const m = [6, 8].map((p) => `<!-- page ${p} -->\n${texte}`).join('\n\n');
++    const r = await verifyLot(lot, m, { extractText: pdf });
++    expect(r.state).toBe('suspect');
++    expect(r.missing).toEqual([7]);
++  });
++  it('suspect : transcription très incomplète', async () => {
++    const m = [6, 7, 8].map((p) => `<!-- page ${p} -->\nTrois mots seulement ici`).join('\n\n');
++    const r = await verifyLot(lot, m, { extractText: pdf });
++    expect(r.state).toBe('suspect');
++    expect(r.coverage).toBeLessThan(0.7);
++  });
++  it('suspect : une page vide au milieu de pages complètes', async () => {
++    const long = Array.from({ length: 20 }, (_, i) => `motnumero${String.fromCharCode(97 + i)}${'x'.repeat(i)}`).join(' ').replace(/\d/g, '');
++    const m = `<!-- page 6 -->\n${long}\n<!-- page 7 -->\nrien\n<!-- page 8 -->\n${long}`;
++    const r = await verifyLot(lot, m, { extractText: async () => [long, long, long] });
++    expect(r.weak).toEqual([7]);
++    expect(r.state).toBe('suspect');
++  });
++  it('PDF sans texte (scan) : seuls les repères sont contrôlés, avec une note', async () => {
++    const r = await verifyLot(lot, md(6, 7, 8), { extractText: async () => null });
++    expect(r.state).toBe('ok');
++    expect(r.coverage).toBeUndefined();
++    expect(r.notes.join(' ')).toContain('Pas de texte');
++  });
++  it('compte les passages [illisible]', async () => {
++    const r = await verifyLot(lot, md(6, 7, 8) + '\n[illisible] [illisible]', { extractText: async () => null });
++    expect(r.notes.join(' ')).toContain('2 passages [illisible]');
++  });
++  it("une extraction qui plante n'empêche pas le contrôle des repères", async () => {
++    const r = await verifyLot(lot, md(6, 8), { extractText: async () => { throw new Error('pdfjs'); } });
++    expect(r.state).toBe('suspect');
++    expect(r.notes.join(' ')).toContain('Comparaison avec le PDF impossible');
++  });
++});
+-- 
+2.43.0
+
