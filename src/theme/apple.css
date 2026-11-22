@@ -161,3 +161,29 @@ input[type="checkbox"]:active { transform: scale(.88); }
   .check path { stroke-dashoffset: 0; }
 }
 @media print { .nav { display: none !important; } .card { box-shadow: none !important; } }
+
+/* États d'import et d'export : pastilles, barre segmentée, journal des appels.
+   Les couleurs d'état viennent de --success, --danger, --warn et de l'accent du thème. */
+:root { --warn: #a15c00; }
+:root[data-mode="dark"] { --warn: #ffb340; }
+.sbadge { --c: var(--text); display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 8px; border-radius: var(--r-pill);
+  font-size: 13px; font-weight: 600; letter-spacing: 0; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.sbadge[data-s="pending"] { --c: color-mix(in srgb, var(--text) 60%, transparent); }
+.sbadge[data-s="running"], .sbadge[data-s="retry"] { --c: var(--accent-text); }
+.sbadge[data-s="ok"] { --c: var(--success); }
+.sbadge[data-s="suspect"] { --c: var(--warn); }
+.sbadge[data-s="failed"] { --c: var(--danger); }
+.sbadge .spin { animation: spin 1s linear infinite; }
+.segbar { display: flex; gap: 3px; height: 8px; margin: 10px 0; }
+.segbar > span { flex: 1; border-radius: 4px; background: var(--tint-hover); }
+.segbar > span[data-s="ok"] { background: var(--success); }
+.segbar > span[data-s="suspect"] { background: var(--warn); }
+.segbar > span[data-s="failed"] { background: var(--danger); }
+.segbar > span[data-s="running"], .segbar > span[data-s="retry"] { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.lots { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.lots li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }
+.lots .note { color: color-mix(in srgb, var(--text) 70%, transparent); }
+.attempts { margin-top: 12px; font-size: 14px; }
+.attempts ul { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
+.report { display: grid; gap: 6px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .sbadge .spin, .segbar > span { animation: none !important; } }

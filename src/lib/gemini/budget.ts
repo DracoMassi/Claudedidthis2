@@ -26,6 +26,8 @@ export class RequestBudget {
     return this.times.filter((x) => x > t - MIN).length < this.limits.perMinute && this.times.length < this.limits.perDay;
   }
   record(): void { this.prune(); this.times.push(this.now()); this.save(); }
+  /** Annule le dernier envoi enregistré (requête que le serveur n'a pas traitée : 5xx). */
+  refund(): void { this.times.pop(); this.save(); }
   used(): { day: number; limit: number } { this.prune(); return { day: this.times.length, limit: this.limits.perDay }; }
   waitSeconds(): number {
     this.prune();

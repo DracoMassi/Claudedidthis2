@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AsyncButton from './AsyncButton';
 import { SelectField, TextField } from './Field';
-import { FxButton } from './fx';
 import { printPages } from '../lib/export/pdf';
 import { exportPng, isLikelyBlank } from '../lib/export/png';
+import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
+import { StatusBadge } from './status';
 import type { GithubRepo } from '../lib/github/repo';
 import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
 import { renderFiche } from '../lib/render/renderFiche';
@@ -44,6 +45,25 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
   };
 
   useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
+
+  const [report, setReport] = useState<PdfReport | null>(null);
+
+  const exporterPdf = async (): Promise<boolean> => {
+    if (!sel || !fiche) return false;
+    setReport(null); setMsg('');
+    const pages = [...(preview.current?.querySelectorAll<HTMLElement>('.fiche-page') ?? [])];
+    try {
+      const { bytes, report: rep } = await exportVerifiedPdf(pages, fiche.meta.format ?? 'fiche');
+      setReport(rep);
+      if (!bytes) return false;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
+      a.download = `${sel.slug}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      return true;
+    } catch { setMsg("La fabrication du PDF a échoué. Utilise l'impression ou l'export PNG"); return false; }
+  };
 
   const exporterPng = async (): Promise<boolean> => {
     if (!sel) return false;
@@ -88,7 +108,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
       {sel && (
         <div className="card" style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {fiche && <FxButton fx="spotlight" className="btn" onClick={() => printPages(fiche.meta.format ?? 'fiche')}>Exporter en PDF</FxButton>}
+            {fiche && <AsyncButton fx="spotlight" className="btn" successLabel="PDF vérifié" run={exporterPdf}>Exporter en PDF (vérifié)</AsyncButton>}
+            {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer (PDF vectoriel)</button>}
             {fiche && <AsyncButton className="btn ghost" successLabel="Exporté" run={exporterPng}>Exporter en PNG</AsyncButton>}
             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir de ce brief</button>}
@@ -99,6 +120,12 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
               }}>{fiche.meta.exemple ? 'Retirer des exemples' : 'Marquer comme exemple de style'}</button>
             )}
           </div>
+          {report && (
+            <div className="report" role="status">
+              <StatusBadge state={report.ok ? 'ok' : 'failed'}>{report.ok ? `PDF créé · ${report.pages} page${report.pages > 1 ? 's' : ''} · ${Math.round(report.bytes / 1024)} Ko · aucune page vide` : 'PDF non créé'}</StatusBadge>
+              {report.problems.map((p, i) => <span key={i}>{p}</span>)}
+            </div>
+          )}
           {fiche && <div className="print-area export-root" ref={preview} style={{ overflow: 'auto', maxWidth: '100%' }} />}
           {cours && <pre style={{ whiteSpace: 'pre-wrap' }}>{cours}</pre>}
         </div>

@@ -32,7 +32,7 @@ export default function Settings() {
   const [s, setS] = useState<S>(getSettings());
   const [msg, setMsg] = useState('');
   const set = <K extends keyof S>(k: K, v: S[K]) => { saveSettings({ [k]: v } as Partial<S>); setS(getSettings()); window.dispatchEvent(new Event('sequentia-settings-changed')); };
-  const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model', label: string, secret = false) => (
+  const text = (k: 'geminiKey' | 'githubToken' | 'owner' | 'repo' | 'model' | 'modelSecours', label: string, secret = false) => (
     <TextField label={label} type={secret ? 'password' : 'text'} autoComplete="off" value={s[k]} onChange={(e) => set(k, e.target.value)} />
   );
   const num = (k: 'maxPerMinute' | 'maxPerDay' | 'lotPages', label: string) => (
@@ -46,6 +46,7 @@ export default function Settings() {
       {text('owner', 'Propriétaire du dépôt')}
       {text('repo', 'Nom du dépôt')}
       {text('model', 'Modèle Gemini')}
+      {text('modelSecours', 'Modèle de secours (optionnel, utilisé si le principal est surchargé)')}
       {num('maxPerMinute', 'Requêtes par minute')}
       {num('maxPerDay', 'Requêtes par jour')}
       {num('lotPages', 'Pages par lot (import de cours)')}

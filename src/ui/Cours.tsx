@@ -4,11 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { splitPdf, type Lot } from '../lib/cours/chunk';
 import { checkMarkdown, type CoursMeta } from '../lib/cours/checks';
 import { renderMarkdownPreview } from '../lib/cours/preview';
-import { ImportQueue } from '../lib/cours/queue';
+import { ImportQueue, type LotInfo } from '../lib/cours/queue';
 import { saveCours } from '../lib/cours/save';
-import { transcribeLot, transcribeWithGemini } from '../lib/cours/transcribe';
-import { ConflictError, RateLimitError } from '../lib/errors';
+import { transcribeLot, transcribeRobust } from '../lib/cours/transcribe';
+import { verifyLot } from '../lib/cours/verify';
+import { ConflictError, NetworkError, RateLimitError } from '../lib/errors';
 import { RequestBudget } from '../lib/gemini/budget';
+import { modelsOf, type RobustCfg } from '../lib/gemini/robust';
 import type { GithubRepo } from '../lib/github/repo';
 import { slugify } from '../lib/slug';
 import type { Db } from '../lib/storage/db';
@@ -17,12 +19,13 @@ import type { Problem } from '../lib/types';
 import { TextArea, SelectField, TextField } from './Field';
 import { FxButton } from './fx';
 import { messageFor } from './messages';
+import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 type Meta = Omit<CoursMeta, 'statut'>;
 type View = { id: string | null; meta: Meta; md: string };
-type Row = { id: string; done: number; total: number; meta?: Meta };
+type Row = { id: string; done: number; total: number; lots: LotInfo[]; meta?: Meta };
 
 async function renderPdfPage(canvas: HTMLCanvasElement, data: Uint8Array, pageNumber: number): Promise<void> {
   const doc = await pdfjs.getDocument({ data: data.slice() }).promise;
@@ -48,14 +51,18 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
   const canvas = useRef<HTMLCanvasElement>(null);
   const preview = useRef<HTMLDivElement>(null);
   const [imgUrl, setImgUrl] = useState('');
+  const [live, setLive] = useState('');
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const auto = useRef<{ n: number; timer?: number }>({ n: 0 });
+  useEffect(() => () => window.clearTimeout(auto.current.timer), []);
 
-  const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => '')), [db]);
+  const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => ''), (lot, md) => verifyLot(lot, md)), [db]);
 
   const refresh = useCallback(async () => {
     if (!db) return;
     const q = queue();
     const out: Row[] = [];
-    for (const id of await q.ids()) out.push({ id, ...(await q.progress(id)), meta: (await db.get(`import-meta:${id}`)) as Meta | undefined });
+    for (const id of await q.ids()) out.push({ id, ...(await q.progress(id)), lots: await q.lotInfos(id), meta: (await db.get(`import-meta:${id}`)) as Meta | undefined });
     setRows(out);
     const s = getSettings();
     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
@@ -94,22 +101,49 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
     } catch { setMsg("Impossible de lire ce fichier. Vérifie que c'est un PDF, une image ou un fichier texte"); } finally { setBusy(false); }
   };
 
-  const run = async (id: string) => {
+  /** File d'import branchée sur Gemini : reprises, modèle de secours, plafonds locaux, contrôle de chaque lot. */
+  const buildQueue = (onErr: (e: unknown) => void) => {
     const s = getSettings();
-    if (!s.geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
     const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
+    const cfg: RobustCfg = { key: s.geminiKey, models: modelsOf(s), budget, onEvent: (e) => setLive(e.message) };
+    return queue(async (lot) => {
+      try { return await transcribeLot(lot, { llm: (l) => transcribeRobust({ cfg, lot: l }) }); }
+      catch (e) { onErr(e); throw e; }
+    });
+  };
+
+  const run = async (id: string) => {
+    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+    window.clearTimeout(auto.current.timer);
     let last: unknown;
-    setBusy(true); setMsg('');
+    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
     try {
-      const q = queue(async (lot) => {
-        if (!budget.canSend()) { last = new RateLimitError(budget.waitSeconds()); throw last; }
-        budget.record();
-        try { return await transcribeLot(lot, { llm: (l) => transcribeWithGemini({ key: s.geminiKey, model: s.model, lot: l }) }); }
-        catch (e) { last = e; throw e; }
-      });
-      const r = await q.run(id);
-      setMsg(r === 'done' ? 'Transcription terminée. Tu peux relire' : last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); await refresh(); }
+      const r = await buildQueue((e) => { last = e; }).run(id);
+      if (r === 'done') {
+        auto.current.n = 0;
+        setMsg('Transcription terminée. Relis les lots marqués « À contrôler »');
+      } else {
+        const retryable = last instanceof NetworkError || (last instanceof RateLimitError && last.retryAfterSec <= 120);
+        if (retryable && auto.current.n < 3 && navigator.onLine !== false) {
+          auto.current.n += 1;
+          const delay = last instanceof RateLimitError ? last.retryAfterSec + 1 : 30;
+          setMsg(`${messageFor(last)}. Nouvel essai automatique dans ${delay} s (${auto.current.n}/3). La progression est gardée`);
+          auto.current.timer = window.setTimeout(() => void run(id), delay * 1000);
+        } else {
+          setMsg(last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
+        }
+      }
+    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
+  };
+
+  const rerunLot = async (id: string, i: number) => {
+    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+    window.clearTimeout(auto.current.timer);
+    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
+    try {
+      const st = await buildQueue(() => undefined).rerun(id, i);
+      setMsg(st.state === 'ok' ? `Lot ${i + 1} relu et vérifié` : `Lot ${i + 1} retranscrit, mais il reste à contrôler`);
+    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
   };
 
   const openReview = async (id: string) => {
@@ -207,17 +241,37 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
       {msg && <p role="status">{msg}</p>}
       <h2 className="titre" style={{ fontSize: 24 }}>Imports en cours</h2>
       {rows.length === 0 && <div className="card">Aucun import.</div>}
-      {rows.map((r) => (
-        <div key={r.id} className="card" style={{ marginBottom: 8 }}>
-          <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
-          <progress value={r.done} max={r.total} style={{ display: 'block', width: '100%' }} />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-            <button className="btn" disabled={busy || r.done >= r.total} onClick={() => void run(r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
-            <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
-            <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
+      {live && <p role="status" aria-live="polite">{live}</p>}
+      {rows.map((r) => {
+        const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
+        const ok = r.lots.filter((l) => l.state === 'ok').length;
+        const stateOf = (l: LotInfo, i: number) => (runningId === r.id && i === r.done && l.state === 'pending' ? 'running' as const : l.state);
+        return (
+          <div key={r.id} className="card" style={{ marginBottom: 8 }}>
+            <b>{r.meta?.chapitre ?? r.id}</b> · {r.meta?.source} · {r.done}/{r.total} lots
+            <SegmentBar label={`${r.done} lots traités sur ${r.total}, ${bad} à contrôler`} segments={r.lots.map((l, i) => ({ state: stateOf(l, i), title: `Lot ${i + 1}` }))} />
+            <details open={bad > 0}>
+              <summary>{ok} lot{ok > 1 ? 's' : ''} vérifié{ok > 1 ? 's' : ''}{bad > 0 ? `, ${bad} à contrôler` : ''}</summary>
+              <ul className="lots">
+                {r.lots.map((l, i) => (
+                  <li key={i}>
+                    <StatusBadge state={stateOf(l, i)} />
+                    <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
+                    <span className="note">{describeLot(l)}</span>
+                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+              <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
+              <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
+      <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
     </div>
   );
 }

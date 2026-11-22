@@ -1,6 +1,10 @@
-import { AuthError, NetworkError, RateLimitError } from '../errors';
+import { AuthError, BlockedError, NetworkError, RateLimitError, ServerBusyError } from '../errors';
 
 export type Msg = { role: 'user' | 'model'; text: string };
+export type GeminiResult = { text: string; finishReason?: string };
+
+/** Statuts qui signalent une surcharge ou une panne passagère : on réessaie. */
+export const RETRYABLE_STATUS = new Set([500, 502, 503, 504, 529]);
 
 async function retryAfterSec(r: Response): Promise<number> {
   const h = Number(r.headers.get('retry-after'));
@@ -14,8 +18,10 @@ async function retryAfterSec(r: Response): Promise<number> {
   return 30;
 }
 
-/** Envoie un corps `generateContent` à Gemini et renvoie le texte ; traduit les échecs en erreurs typées. */
-export async function postGemini(o: { key: string; model: string; body: unknown; fetchImpl?: typeof fetch }): Promise<string> {
+type PostOpts = { key: string; model: string; body: unknown; fetchImpl?: typeof fetch };
+
+/** Envoie un corps `generateContent` à Gemini ; renvoie le texte ET la raison d'arrêt ; traduit les échecs en erreurs typées. */
+export async function postGeminiDetailed(o: PostOpts): Promise<GeminiResult> {
   const f = o.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   let r: Response;
   try {
@@ -31,20 +37,36 @@ export async function postGemini(o: { key: string; model: string; body: unknown;
   if (r.status === 429) throw new RateLimitError(await retryAfterSec(r));
   if (r.status === 401 || r.status === 403) throw new AuthError('Clé refusée');
   if (r.status === 400 && /api key/i.test(await r.clone().text())) throw new AuthError('Clé refusée');
+  if (RETRYABLE_STATUS.has(r.status)) throw new ServerBusyError(r.status);
   if (!r.ok) throw new NetworkError(`Gemini a répondu ${r.status}`);
-  const j = (await r.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-  const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-  if (!text) throw new NetworkError('Réponse vide de Gemini');
-  return text;
+  const j = (await r.json()) as {
+    candidates?: { finishReason?: string; content?: { parts?: { text?: string }[] } }[];
+    promptFeedback?: { blockReason?: string };
+  };
+  const cand = j.candidates?.[0];
+  const text = cand?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
+  const finishReason = cand?.finishReason;
+  if (!text) {
+    if (j.promptFeedback?.blockReason) throw new BlockedError(j.promptFeedback.blockReason);
+    if (finishReason && ['SAFETY', 'RECITATION', 'PROHIBITED_CONTENT', 'BLOCKLIST'].includes(finishReason)) throw new BlockedError(finishReason);
+    throw new NetworkError('Réponse vide de Gemini');
+  }
+  return { text, finishReason };
+}
+
+/** Comme postGeminiDetailed, mais ne renvoie que le texte. */
+export async function postGemini(o: PostOpts): Promise<string> {
+  return (await postGeminiDetailed(o)).text;
+}
+
+export function buildBody(system: string, messages: Msg[]): unknown {
+  return {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+  };
 }
 
 export function callGemini(o: { key: string; model: string; system: string; messages: Msg[]; fetchImpl?: typeof fetch }): Promise<string> {
-  return postGemini({
-    key: o.key, model: o.model, fetchImpl: o.fetchImpl,
-    body: {
-      systemInstruction: { parts: [{ text: o.system }] },
-      contents: o.messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
-    },
-  });
+  return postGemini({ key: o.key, model: o.model, fetchImpl: o.fetchImpl, body: buildBody(o.system, o.messages) });
 }

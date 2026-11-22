@@ -1,7 +1,7 @@
 import type { Mode, ThemeId, Tokens } from '../../theme/themes';
 
 export type Settings = {
-  geminiKey: string; githubToken: string; owner: string; repo: string; model: string;
+  geminiKey: string; githubToken: string; owner: string; repo: string; model: string; modelSecours: string;
   maxPerMinute: number; maxPerDay: number; lotPages: number;
   theme: ThemeId; mode: Mode;
   themeOverrides: { light?: Partial<Tokens>; dark?: Partial<Tokens> };
@@ -11,6 +11,7 @@ const KEY = 'sequentia.settings';
 const defaults = (): Settings => ({
   geminiKey: '', githubToken: '', owner: '', repo: '',
   model: 'gemini-3.8-flash', // MODEL par défaut de Fiches/orchestrate.py
+  modelSecours: '', // essayé quand le modèle principal reste surchargé (vide : pas de secours)
   maxPerMinute: 5, maxPerDay: 100, lotPages: 5,
   theme: 'd', mode: 'auto', themeOverrides: {},
 });

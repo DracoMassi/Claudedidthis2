@@ -44,6 +44,18 @@ Les tests automatiques ne couvrent ni les écrans, ni Safari. Coche chaque ligne
 - [ ] **Cours** : importer un PDF de 3 pages, lancer, relire côte à côte (page source à gauche, rendu à droite), enregistrer ; retrouver le cours dans la Bibliothèque ; couper le réseau en cours d'import puis reprendre : la progression est conservée.
 - [ ] Hors connexion : un message clair s'affiche à l'enregistrement et le brouillon est conservé.
 
+## Robustesse (erreurs 529/503, contrôle des imports, export vérifié)
+
+- **Reprises** : surcharge (500, 502, 503, 504, 529) = attentes de 1, 2 et 4 s avec un peu d'aléa, 4 essais par modèle. Un quota court (≤ 20 s) est attendu ; un quota long fait passer au modèle suivant. Une clé refusée arrête tout de suite.
+- **Modèle de secours** : Réglages → « Modèle de secours ». Il n'est essayé que si le principal reste indisponible. Vide : pas de secours.
+- **Plafonds locaux** : une tentative refusée par le serveur (5xx) est remboursée dans le compteur.
+- **Import de cours** : chaque lot est contrôlé (repères `<!-- page N -->` attendus, et, si le PDF a du texte, part des mots du PDF retrouvés dans la transcription, lot par lot et page par page). Un lot douteux est marqué « À contrôler » et peut être relancé seul. Une réponse coupée (MAX_TOKENS) est retranscrite page par page.
+- **Reprise automatique** : après une pause réseau ou quota court, l'import repart seul (3 fois au plus).
+- **Journal des appels** : « Détails des appels » (modèle, essai, résultat, durée) dans Générer et Cours.
+- **Export PDF vérifié** : le PDF est fabriqué à partir des pages rendues, les pages vides sont refusées, puis le fichier est relu (en-tête, nombre de pages). « Imprimer » reste disponible pour un PDF vectoriel, mais l'appli ne peut pas savoir si le fichier a été créé.
+
+À vérifier sur l'iPad : un PDF de plusieurs pages en mode avion à mi-parcours (pause puis reprise), un lot suspect relancé seul, et l'export PDF vérifié d'une fiche de 3 pages.
+
 ## Limites connues
 
 - Le site ne se recharge pas hors connexion (pas de service worker).

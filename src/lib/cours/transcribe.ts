@@ -1,5 +1,7 @@
 import { toBase64 } from '../bytes';
+import { TruncatedError } from '../errors';
 import { postGemini } from '../gemini/client';
+import { robustPost, type RobustCfg } from '../gemini/robust';
 import type { Lot } from './chunk';
 
 /** Consigne de transcription (spec §7.2). */
@@ -26,4 +28,22 @@ export function transcribeWithGemini(o: { key: string; model: string; lot: Lot; 
       generationConfig: { temperature: 0.1, responseMimeType: 'text/plain' },
     },
   });
+}
+
+function transcriptionBody(lot: Lot): unknown {
+  return {
+    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: lot.mime ?? 'application/pdf', data: toBase64(lot.data) } }, { text: transcriptionPrompt(lot) }] }],
+    generationConfig: { temperature: 0.1, responseMimeType: 'text/plain' },
+  };
+}
+
+/** Taille maximale approximative d'un envoi en ligne (à confirmer dans la documentation Gemini). */
+export const MAX_INLINE_BYTES = 18 * 1024 * 1024;
+
+/** Transcription avec reprises, modèle de secours et refus d'une réponse coupée (finishReason MAX_TOKENS). */
+export async function transcribeRobust(o: { cfg: RobustCfg; lot: Lot }): Promise<string> {
+  if (o.lot.data.byteLength > MAX_INLINE_BYTES) throw new TruncatedError(`Lot trop lourd (${Math.round(o.lot.data.byteLength / 1048576)} Mo)`);
+  const r = await robustPost(o.cfg, transcriptionBody(o.lot));
+  if (r.finishReason === 'MAX_TOKENS') throw new TruncatedError();
+  return r.text;
 }

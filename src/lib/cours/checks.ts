@@ -23,6 +23,8 @@ export function checkMarkdown(md: string): Problem[] {
   });
   const n = (md.match(/\[illisible\]/g) ?? []).length;
   if (n > 0) out.push({ code: 'lint', message: `${n} passage${n > 1 ? 's' : ''} [illisible] à relire` });
+  const nl = (md.match(/\[lot non transcrit/g) ?? []).length;
+  if (nl > 0) out.push({ code: 'lint', message: `${nl} lot${nl > 1 ? 's' : ''} non transcrit${nl > 1 ? 's' : ''} : relance-le dans Imports en cours` });
   return out;
 }
 

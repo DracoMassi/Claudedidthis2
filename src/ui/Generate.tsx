@@ -11,6 +11,7 @@ import { exportDraft, type Db, type Draft } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
 import type { Brief, Fiche, Problem } from '../lib/types';
 import { makeGenerateDeps } from './geminiDeps';
+import { AttemptLog, StatusBadge } from './status';
 import { TextArea, SelectField, TextField } from './Field';
 import { FxButton } from './fx';
 import { messageFor } from './messages';
@@ -48,6 +49,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
   const [problems, setProblems] = useState<Problem[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [used, setUsed] = useState('');
+  const [live, setLive] = useState('');
 
   const refresh = useCallback(async () => {
     if (db) setDrafts(await db.listDrafts());
@@ -79,7 +81,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
       try { src = await loadSources(repo, db, brief); }
       catch (e) { setMsg(messageFor(e, { source: 'github' })); return; }
       const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief });
-      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour));
+      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour, (e) => setLive(e.message)));
       const fiche: Fiche | null = result.fiche
         ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
         : null;
@@ -92,7 +94,7 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
       await refresh();
     } catch (e) {
       setMsg(messageFor(e));
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setLive(''); }
   };
 
   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
@@ -115,7 +117,9 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
         <FxButton fx="magnetic" className="btn" disabled={busy} onClick={() => void run()}>{busy ? `Tour ${tour} sur 4…` : 'Générer'}</FxButton>
         <span style={{ marginLeft: 12 }}>Requêtes aujourd'hui : {used}</span>
       </div>
+      {busy && <p role="status" aria-live="polite"><StatusBadge state={live ? 'retry' : 'running'}>{live || `Tour ${tour} sur 4`}</StatusBadge></p>}
       {msg && <p role="status">{msg}</p>}
+      <AttemptLog refreshKey={`${msg}|${busy}`} />
       {problems.length > 0 && <ul>{problems.map((p, i) => <li key={i}>{p.code}{p.path ? ` ${p.path}` : ''} : {p.message}</li>)}</ul>}
       <h2 className="titre" style={{ fontSize: 24 }}>Brouillons</h2>
       {drafts.length === 0 && <div className="card">Aucun brouillon.</div>}
