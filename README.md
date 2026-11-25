@@ -12,6 +12,7 @@ Site statique (GitHub Pages) pour générer, relire, valider et exporter des fic
 3. **Jeton GitHub** (sur ton compte) : *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*.
    - *Repository access* : **Only select repositories**, uniquement `Fiches`.
    - *Permissions → Repository permissions → Contents* : **Read and write**.
+   Le test GitHub des Réglages vérifie maintenant la lecture du contenu : un jeton qui voit le dépôt mais n'a pas « Contents » est signalé avec la marche à suivre (avant, la bibliothèque affichait « Vérifie ton jeton » pour toutes les erreurs).
    - *Expiration* : une date (par exemple 90 jours).
 4. **Réglages dans l'app** : colle ta clé Gemini (Google AI Studio), le jeton, le propriétaire et le nom du dépôt (`Fiches`), puis « Tester la connexion » pour GitHub et pour Gemini. Ces valeurs restent sur l'appareil.
 5. **Écran d'accueil de l'iPad** : dans Safari, *Partager → Sur l'écran d'accueil*. Safari peut effacer les données d'un site visité rarement, sauf s'il est installé ainsi (à vérifier sur ton iPad).
@@ -55,6 +56,13 @@ Les tests automatiques ne couvrent ni les écrans, ni Safari. Coche chaque ligne
 - **Export PDF vérifié** : le PDF est fabriqué à partir des pages rendues, les pages vides sont refusées, puis le fichier est relu (en-tête, nombre de pages). « Imprimer » reste disponible pour un PDF vectoriel, mais l'appli ne peut pas savoir si le fichier a été créé.
 
 À vérifier sur l'iPad : un PDF de plusieurs pages en mode avion à mi-parcours (pause puis reprise), un lot suspect relancé seul, et l'export PDF vérifié d'une fiche de 3 pages.
+
+### Tâches longues, bascule de modèle, références et couleurs
+
+- **Progression conservée** : la génération et la transcription tournent hors des écrans. En changeant d'onglet, un bandeau garde la progression visible (phrase d'état, étape, temps écoulé qui défile, compte à rebours avant reprise), le titre de l'onglet du navigateur affiche « ⏳ Tour 2/4 », et une alerte prévient avant de recharger la page. Sur iPad, mettre l'appli en arrière-plan peut suspendre la requête en cours : reste dans l'appli pendant une génération.
+- **Modèle utilisé** : bouton Principal / Secours dans Réglages, Générer et Cours. Le modèle choisi passe en premier, l'autre sert de repli ; la bascule agit dès le prochain envoi.
+- **Bibliothèque vers Générer** : « Envoyer vers Générer » (fiche entière) ou « Choisir des blocs pour Générer » (cases à cocher). Les blocs deviennent des références dans Générer (retrait bloc par bloc, mode « s'en inspirer » ou « les reprendre dans la fiche »). On peut aussi déposer un .json de fiche ou coller du JSON. Les références sont gardées sur l'appareil.
+- **Couleurs des fiches** : Réglages → Couleurs des fiches (palettes prêtes ou personnalisées : titres, sous-titres et pièges, logo), et un choix rapide à côté de l'aperçu. Elles s'appliquent à l'aperçu, à l'impression et aux exports PDF et PNG de toutes les fiches de cet appareil ; elles ne sont pas écrites dans le JSON de la fiche (le schéma refuse les champs inconnus).
 
 ## Limites connues
 

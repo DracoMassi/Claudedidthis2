@@ -1,22 +1,15 @@
 import { useState } from 'react';
 import AsyncButton from './AsyncButton';
 import { TextField } from './Field';
+import FichePaletteSettings from './FichePaletteSettings';
 import ThemeSettings from './ThemeSettings';
 import { Notice, Section } from './kit';
+import ModelSwitch from './ModelSwitch';
+import { diagnoseGithub } from '../lib/github/diagnose';
 import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
 
 async function testGithub(s: S): Promise<string> {
-  try {
-    const r = await fetch(`https://api.github.com/repos/${s.owner}/${s.repo}`, {
-      headers: { Authorization: `Bearer ${s.githubToken}`, Accept: 'application/vnd.github+json' },
-    });
-    if (r.ok) return 'GitHub : connecté';
-    if (r.status === 401) return 'Jeton refusé ou expiré. Crée-en un nouveau (voir le README)';
-    if (r.status === 404) return 'Dépôt introuvable, ou jeton sans accès à ce dépôt';
-    return `GitHub a répondu ${r.status}`;
-  } catch {
-    return "GitHub n'a pas répondu. Réessayer";
-  }
+  return (await diagnoseGithub({ owner: s.owner, repo: s.repo, token: s.githubToken })).message;
 }
 async function testGemini(s: S): Promise<string> {
   try {
@@ -59,11 +52,12 @@ export default function Settings() {
           {msg && <Notice kind={ok ? 'ok' : msg === 'Clés effacées' ? 'info' : 'error'}>{msg}</Notice>}
         </Section>
 
-        <Section title="Modèle" hint="Le modèle de secours ne sert que si le principal reste surchargé.">
+        <Section title="Modèle" hint="Le modèle choisi passe en premier ; l’autre prend le relais s’il reste surchargé. La bascule agit dès le prochain envoi.">
           <div className="grid2">
             {text('model', 'Modèle Gemini')}
             {text('modelSecours', 'Modèle de secours (optionnel)')}
           </div>
+          <ModelSwitch />
         </Section>
 
         <Section title="Limites" hint="Elles évitent de dépasser ton quota Gemini.">
@@ -75,6 +69,7 @@ export default function Settings() {
         </Section>
       </div>
       <ThemeSettings />
+      <FichePaletteSettings />
     </>
   );
 }

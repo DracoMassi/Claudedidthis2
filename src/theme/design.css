@@ -193,3 +193,42 @@ legend { padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--muted);
 
 @media (prefers-reduced-motion: reduce) { .screen { animation: none; } .stepper span[data-s="now"] { animation: none; } }
 @media print { .actionbar, .topbar { display: none !important; } }
+
+/* ───────── Tâches longues : progression vivante, bandeau, bascule de modèle, blocs de la bibliothèque ───────── */
+.liveprog { display: grid; gap: 6px; }
+.liveprog-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.liveprog-head b { color: var(--text); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.liveprog-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.liveprog .stepper { max-width: 280px; margin-top: 2px; }
+.indeterminate { position: relative; height: 3px; border-radius: 2px; overflow: hidden; background: var(--tint-hover); max-width: 280px; }
+.indeterminate i { position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: inherit; background: var(--accent); animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(270%); } }
+.jobbar { display: grid; gap: 10px; margin: 12px 0 0; }
+.jobbar .jobcard { margin: 0; padding: 14px 18px; }
+.jobbar .jobhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.jobbar .jobhead b { overflow-wrap: anywhere; }
+.jobbar .jobacts { display: inline-flex; gap: 8px; }
+.jobbar .notice { margin: 0; }
+.nav .live { width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); display: inline-block; animation: pulse 1.2s ease-in-out infinite; }
+.modelrow { margin: 4px 0 4px; }
+.modelswitch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 0; }
+.modelswitch[data-compact] { margin: 0; }
+.modelswitch .ms-label { font-size: 13px; color: var(--muted); }
+.ms-group { display: inline-flex; padding: 3px; gap: 3px; border-radius: var(--r-pill); background: var(--tint); }
+.ms-group button { --b: transparent; --f: var(--text); display: grid; gap: 0; justify-items: start; min-height: 0; height: auto; padding: 6px 16px; border-radius: var(--r-pill); text-align: left; }
+.ms-group button b { font-size: 14px; font-weight: 600; }
+.ms-group button small { font-size: 12px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-group button[aria-checked="true"] { --b: var(--card); box-shadow: var(--shadow-sm); }
+.ms-group button:disabled { opacity: .55; }
+.blockpicker .blockpage { border: 0; margin: 0 0 10px; padding: 0; }
+.blockpicker legend { font-size: 14px; font-weight: 600; padding: 0; margin-bottom: 4px; }
+.check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 15px; }
+.check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+@media (prefers-reduced-motion: reduce) { .indeterminate i, .nav .live { animation: none; } .indeterminate i { width: 100%; opacity: .35; } }
+
+/* Aperçu des couleurs de fiche dans Réglages : fond blanc fixe, comme sur la fiche imprimée. */
+.palette-preview { display: grid; gap: 2px; justify-items: center; margin-top: 16px; padding: 16px; border-radius: 16px; background: #FFFFFF; color: #000000; border: 1px solid var(--hair); text-align: center; }
+.palette-preview .pp-logo { align-self: start; justify-self: start; font-style: italic; font-size: 18px; color: var(--f-rose); }
+.palette-preview .pp-titre { font-size: 28px; font-weight: 700; color: var(--f-rouge); }
+.palette-preview .pp-sous { font-size: 15px; color: var(--f-rouge-fonce); }
+.palette-preview .pp-piege { margin-top: 6px; font-size: 14px; font-weight: 600; color: var(--f-rouge-fonce); }

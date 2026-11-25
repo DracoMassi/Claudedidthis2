@@ -1,23 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RequestBudget } from '../lib/gemini/budget';
-import { buildPrompt } from '../lib/generate/context';
-import { generateFiche } from '../lib/generate/loop';
-import { loadSources } from '../lib/generate/sources';
+import { blockLabel, countBlocks, mergeRef, refFromJson, removeBlock, removeRef, type RefMode, type RefSet } from '../lib/generate/refs';
 import type { GithubRepo } from '../lib/github/repo';
 import { AuthError } from '../lib/errors';
-import schema from '../lib/schema/schema.json';
+import { dismissJob, isRunning } from '../lib/jobs/store';
 import { slugify } from '../lib/slug';
 import { exportDraft, type Db, type Draft } from '../lib/storage/db';
 import { getSettings } from '../lib/storage/settings';
-import type { Brief, Fiche, Problem } from '../lib/types';
-import { makeGenerateDeps } from './geminiDeps';
+import type { Brief } from '../lib/types';
 import { AttemptLog } from './status';
 import { TextArea, SelectField, TextField } from './Field';
 import { FxButton } from './fx';
+import LiveProgress from './LiveProgress';
 import { messageFor } from './messages';
-import { Empty, Notice, Quota, Section, Stepper } from './kit';
+import ModelSwitch from './ModelSwitch';
+import { runGenerate } from './runGenerate';
+import { useJob } from './useJobs';
+import { Empty, Notice, Quota, Section } from './kit';
 
-type Props = { repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void };
+type Props = {
+  repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void;
+  /** Blocs de la bibliothèque mis de côté pour cette génération (gérés par l'App : la Bibliothèque peut en ajouter). */
+  refs: RefSet; onRefsChange: (r: RefSet) => void; onGoLibrary: () => void;
+};
 
 const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
 const EMPTY = { matiere: 'maths', niveau: 'mpsi', chapitre: '', sujet: '', format: 'fiche', contenu: '', pieges: '', exemples: '', nbQcm: 2, exclure: '', consignes: '' };
@@ -42,15 +47,20 @@ export function downloadText(name: string, text: string): void {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
-export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props) {
+export default function Generate({ repo, db, initialBrief, onOpenDraft, refs, onRefsChange, onGoLibrary }: Props) {
   const [f, setF] = useState<Form>(EMPTY);
-  const [busy, setBusy] = useState(false);
-  const [tour, setTour] = useState(0);
   const [msg, setMsg] = useState('');
-  const [problems, setProblems] = useState<Problem[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [used, setUsed] = useState('');
-  const [live, setLive] = useState('');
+  const [pasteJson, setPasteJson] = useState('');
+  const refsEl = useRef<HTMLDivElement>(null);
+  const prevCount = useRef(countBlocks(refs));
+
+  // La génération vit hors de ce composant : changer d'onglet ne l'interrompt pas, et son état est relu ici au retour.
+  const job = useJob('generate');
+  const busy = job?.state === 'running';
+  const finished = job && (job.state === 'done' || job.state === 'error') && !job.dismissed ? job : null;
+  const problems = finished?.problems ?? [];
 
   const refresh = useCallback(async () => {
     if (db) setDrafts(await db.listDrafts());
@@ -58,15 +68,40 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
     setUsed(`${u.day}/${u.limit}`);
   }, [db]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh, job?.state]);
   useEffect(() => { if (initialBrief) setF(fromBrief(initialBrief)); }, [initialBrief]);
+  useEffect(() => {
+    const n = countBlocks(refs);
+    if (n > prevCount.current) refsEl.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    prevCount.current = n;
+  }, [refs]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
 
-  const importBrief = async (file: File | undefined) => {
+  /** Un fichier .json : un brief remplit le formulaire ; une fiche ou une liste de blocs devient une référence. */
+  const importJson = async (file: File | undefined) => {
     if (!file) return;
-    try { setF(fromBrief(JSON.parse(await file.text()) as Brief)); setMsg(''); }
-    catch { setMsg("Ce fichier n'est pas un brief JSON valide"); }
+    let text = '';
+    try { text = await file.text(); JSON.parse(text); } catch { setMsg("Ce fichier n'est pas un JSON valide"); return; }
+    const data = JSON.parse(text) as unknown;
+    if (Array.isArray(data) || (typeof data === 'object' && data !== null && 'pages' in data)) {
+      try {
+        const ref = refFromJson(text, file.name.replace(/\.json$/i, ''));
+        onRefsChange(mergeRef(refs, ref));
+        setMsg(`${ref.blocks.length} bloc${ref.blocks.length > 1 ? 's' : ''} ajouté${ref.blocks.length > 1 ? 's' : ''} aux références`);
+      } catch (e) { setMsg((e as Error).message); }
+      return;
+    }
+    setF(fromBrief(data as Brief)); setMsg('');
+  };
+
+  const addPasted = () => {
+    try {
+      const ref = refFromJson(pasteJson);
+      onRefsChange(mergeRef(refs, ref));
+      setPasteJson('');
+      setMsg(`${ref.blocks.length} bloc${ref.blocks.length > 1 ? 's' : ''} ajouté${ref.blocks.length > 1 ? 's' : ''} aux références`);
+    } catch (e) { setMsg((e as Error).message); }
   };
 
   const run = async () => {
@@ -74,41 +109,24 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
     if (!s.geminiKey) { setMsg(messageFor(new AuthError())); return; }
     if (!repo || !db) { setMsg('Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages'); return; }
     if (!f.sujet.trim() || !f.chapitre.trim()) { setMsg('Renseigne au moins le chapitre et le sujet'); return; }
-    setBusy(true); setMsg(''); setProblems([]); setTour(0);
-    try {
-      await document.fonts?.ready;
-      const brief = toBrief(f);
-      let src;
-      try { src = await loadSources(repo, db, brief); }
-      catch (e) { setMsg(messageFor(e, { source: 'github' })); return; }
-      const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief });
-      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour, (e) => setLive(e.message)));
-      const fiche: Fiche | null = result.fiche
-        ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
-        : null;
-      const draft: Draft = { id: brief.id, fiche, raw: result.last, brief, problems: result.problems, updatedAt: Date.now() };
-      await db.putDraft(draft);
-      setProblems(result.problems);
-      if (result.error) setMsg(messageFor(result.error));
-      else if (!result.ok) setMsg("La fiche n'a pas passé tous les contrôles. Le dernier essai est gardé dans les brouillons");
-      else setMsg(`Brouillon prêt après ${result.tours} tour${result.tours > 1 ? 's' : ''}`);
-      await refresh();
-    } catch (e) {
-      setMsg(messageFor(e));
-    } finally { setBusy(false); setLive(''); }
+    if (isRunning('generate')) { setMsg('Une génération est déjà en cours'); return; }
+    setMsg('');
+    void runGenerate({ repo, db, brief: toBrief(f), refs });
   };
 
   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
   const pret = f.sujet.trim() && f.chapitre.trim();
-  const ok = msg.startsWith('Brouillon prêt');
+  const nRefs = countBlocks(refs);
+  const notice = msg || finished?.message || '';
+  const noticeKind = msg ? (/aux références/.test(msg) ? 'ok' as const : 'info' as const) : finished?.outcome === 'ok' ? 'ok' as const : 'error' as const;
 
   return (
     <div>
       <div className="card">
         <label className="drop">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" /></svg>
-          <div><b>Reprendre un brief existant</b><span>Choisis un fichier .json pour remplir le formulaire</span></div>
-          <input type="file" accept="application/json,.json" onChange={(e) => void importBrief(e.target.files?.[0])} />
+          <div><b>Reprendre un brief ou une fiche</b><span>Un brief .json remplit le formulaire ; une fiche ou des blocs deviennent des références</span></div>
+          <input type="file" accept="application/json,.json" onChange={(e) => { void importJson(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
 
         <Section title="Le sujet" hint="Ces deux champs sont obligatoires.">
@@ -132,6 +150,49 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
           <TextField label="Nombre de QCM" type="number" min={0} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />
         </Section>
 
+        <div ref={refsEl}>
+          <Section title="Références de la bibliothèque" hint="Des blocs de fiches existantes que Gemini doit reprendre ou imiter. Choisis-les dans la Bibliothèque, dépose un .json ou colle du JSON.">
+            {refs.items.length === 0 && <p className="muted" style={{ margin: '0 0 12px' }}>Aucune référence pour l’instant.</p>}
+            {refs.items.length > 0 && (
+              <ul className="rows" style={{ marginBottom: 12 }}>
+                {refs.items.map((r) => (
+                  <li key={r.id} className="rowcard">
+                    <div className="what"><b>{r.titre}</b><small>{r.blocks.length} bloc{r.blocks.length > 1 ? 's' : ''}{r.matiere ? ` · ${r.matiere}` : ''}</small></div>
+                    <div className="acts"><button onClick={() => onRefsChange(removeRef(refs, r.id))}>Retirer</button></div>
+                    <details className="adv" style={{ flexBasis: '100%', marginTop: 0, paddingTop: 8 }}>
+                      <summary>Voir les blocs</summary>
+                      <ul className="lots">
+                        {r.blocks.map((b) => (
+                          <li key={`${b.page}.${b.index}`}>
+                            <span>{blockLabel(b.block)}</span>
+                            <span className="note">page {b.page + 1}</span>
+                            <button className="btn ghost" style={{ minHeight: 32, padding: '0 14px', fontSize: 14 }} aria-label={`Retirer ${blockLabel(b.block)}`} onClick={() => onRefsChange(removeBlock(refs, r.id, b.page, b.index))}>Retirer</button>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {nRefs > 0 && (
+              <SelectField label="Comment les utiliser ?" value={refs.mode} onChange={(e) => onRefsChange({ ...refs, mode: e.target.value as RefMode })}>
+                <option value="inspire">S’en inspirer (structure et style)</option>
+                <option value="reprendre">Les reprendre dans la fiche</option>
+              </SelectField>
+            )}
+            <div className="toolbar" style={{ marginBottom: 0 }}>
+              <button className="btn ghost" onClick={onGoLibrary}>Choisir dans la bibliothèque</button>
+              {nRefs > 0 && <button onClick={() => onRefsChange({ ...refs, items: [] })}>Tout retirer</button>}
+            </div>
+            <details className="adv">
+              <summary>Coller du JSON (fiche, bloc ou liste de blocs)</summary>
+              <TextArea label="JSON" rows={4} value={pasteJson} onChange={(e) => setPasteJson(e.target.value)} />
+              <button className="btn" disabled={!pasteJson.trim()} onClick={addPasted}>Ajouter aux références</button>
+            </details>
+          </Section>
+        </div>
+
         <details className="adv" open={!!(f.exclure || f.consignes)}>
           <summary>Options avancées</summary>
           <TextArea label="À exclure" rows={2} hint="Notions à ne pas aborder, une par ligne." value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />
@@ -139,7 +200,9 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
         </details>
       </div>
 
-      {msg && !busy && <Notice kind={ok ? 'ok' : problems.length || msg.startsWith('La fiche') ? 'error' : 'info'}>{msg}</Notice>}
+      {notice && !busy && (
+        <Notice kind={noticeKind} action={!msg && finished ? <button onClick={() => dismissJob('generate')}>Fermer</button> : undefined}>{notice}</Notice>
+      )}
       {problems.length > 0 && !busy && (
         <details className="adv" style={{ marginTop: -8, marginBottom: 20 }}>
           <summary>{problems.length} point{problems.length > 1 ? 's' : ''} à corriger dans la fiche</summary>
@@ -147,20 +210,16 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
         </details>
       )}
 
+      <div className="modelrow"><ModelSwitch compact /></div>
       <div className="actionbar">
-        <div className="grow" role="status" aria-live="polite">
-          {busy ? (
-            <>
-              <b>{live || `Tour ${Math.max(tour, 1)} sur 4`}</b>
-              <Stepper current={Math.max(tour, 1)} total={4} label={`Tour ${tour} sur 4`} />
-            </>
-          ) : pret ? <Quota used={used} /> : <span>Renseigne le chapitre et le sujet pour lancer la génération.</span>}
+        <div className="grow">
+          {busy && job ? <LiveProgress job={job} /> : pret ? <Quota used={used} /> : <span>Renseigne le chapitre et le sujet pour lancer la génération.</span>}
         </div>
         <div className="btns">
           <FxButton fx="magnetic" className="btn btn-lg" disabled={busy || !pret} onClick={() => void run()}>{busy ? 'Génération en cours…' : 'Générer la fiche'}</FxButton>
         </div>
       </div>
-      <AttemptLog refreshKey={`${msg}|${busy}`} />
+      <AttemptLog refreshKey={`${notice}|${job?.state}|${job?.step}`} />
 
       <h2 className="h2">Brouillons <small>{drafts.length > 0 ? `${drafts.length} à relire` : ''}</small></h2>
       {drafts.length === 0 && <Empty title="Aucun brouillon">Les fiches générées arrivent ici, prêtes à être relues avant d’être validées.</Empty>}

@@ -1,4 +1,5 @@
 import type { Brief, Fiche, Statut } from '../types';
+import { refsToPrompt, type RefSet } from './refs';
 import { splitSections } from './sections';
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -30,7 +31,7 @@ export function pickCourseSections(cours: { md: string; statut: Statut }[], brie
     .map((x) => `## ${x.titre}\n${x.texte}`);
 }
 
-export function buildPrompt(i: { charte: string; schema: object; examples: Fiche[]; sections: string[]; brief: Brief }): { system: string; user: string } {
+export function buildPrompt(i: { charte: string; schema: object; examples: Fiche[]; sections: string[]; brief: Brief; refs?: RefSet }): { system: string; user: string } {
   const format = i.brief.format ?? 'fiche';
   const system = `Tu es l'auteur des fiches Séquentia, niveau ${i.brief.niveau} (classes préparatoires et lycée).
 Tu réponds UNIQUEMENT par un objet JSON conforme au schéma ci-dessous. Aucun texte autour.
@@ -52,6 +53,7 @@ ${JSON.stringify(i.schema)}
 `;
   const ex = i.examples.length ? i.examples.map((f) => JSON.stringify(f)).join('\n---\n') : '(aucun exemple disponible)';
   const cs = i.sections.length ? i.sections.join('\n---\n') : '(aucun extrait de cours disponible)';
-  const user = `EXEMPLES DE FICHES (style à imiter) :\n${ex}\n\nEXTRAITS DE COURS (source de vérité) :\n${cs}\n\nBRIEF :\n${JSON.stringify(i.brief)}`;
+  const refs = i.refs ? refsToPrompt(i.refs) : '';
+  const user = `EXEMPLES DE FICHES (style à imiter) :\n${ex}\n\n${refs ? `${refs}\n\n` : ''}EXTRAITS DE COURS (source de vérité) :\n${cs}\n\nBRIEF :\n${JSON.stringify(i.brief)}`;
   return { system, user };
 }

@@ -2,6 +2,7 @@ import type { Block, Fiche } from '../types';
 import { FORMATS } from './formats';
 import { renderRich } from './rich';
 import { sanitizeSvg } from './sanitizeSvg';
+import { DEFAULT_PALETTE, applyPalette, type FichePalette } from './palette';
 
 const MATIERES: Record<string, string> = {
   maths: 'Mathématiques', physique: 'Physique', chimie: 'Chimie', si: "Sciences de l'ingénieur",
@@ -12,7 +13,7 @@ const NIVEAUX: Record<string, string> = { terminale: 'Terminale', mpsi: 'MPSI' }
 const str = (b: Block, k: string): string => (typeof b[k] === 'string' ? (b[k] as string) : '');
 const arr = (b: Block, k: string): string[] => (Array.isArray(b[k]) ? (b[k] as string[]) : []);
 
-export function renderFiche(root: HTMLElement, fiche: Fiche): { katexErrors: string[] } {
+export function renderFiche(root: HTMLElement, fiche: Fiche, palette: FichePalette = DEFAULT_PALETTE): { katexErrors: string[] } {
   const errors: string[] = [];
   const el = (tag: string, cls?: string, text?: string): HTMLElement => {
     const e = document.createElement(tag);
@@ -68,6 +69,7 @@ export function renderFiche(root: HTMLElement, fiche: Fiche): { katexErrors: str
 
   root.innerHTML = '';
   root.setAttribute('data-fiche', '');
+  applyPalette(root, palette);
   const fmt = FORMATS[fiche.meta.format ?? 'fiche'];
   const n = fiche.pages.length;
   fiche.pages.forEach((p, i) => {

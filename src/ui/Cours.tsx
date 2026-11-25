@@ -6,11 +6,9 @@ import { checkMarkdown, type CoursMeta } from '../lib/cours/checks';
 import { renderMarkdownPreview } from '../lib/cours/preview';
 import { ImportQueue, type LotInfo } from '../lib/cours/queue';
 import { saveCours } from '../lib/cours/save';
-import { transcribeLot, transcribeRobust } from '../lib/cours/transcribe';
 import { verifyLot } from '../lib/cours/verify';
-import { ConflictError, NetworkError, RateLimitError } from '../lib/errors';
+import { ConflictError } from '../lib/errors';
 import { RequestBudget } from '../lib/gemini/budget';
-import { modelsOf, type RobustCfg } from '../lib/gemini/robust';
 import type { GithubRepo } from '../lib/github/repo';
 import { slugify } from '../lib/slug';
 import type { Db } from '../lib/storage/db';
@@ -18,7 +16,12 @@ import { getSettings } from '../lib/storage/settings';
 import type { Problem } from '../lib/types';
 import { TextArea, SelectField, TextField } from './Field';
 import { FxButton } from './fx';
+import { dismissJob } from '../lib/jobs/store';
+import LiveProgress from './LiveProgress';
 import { messageFor } from './messages';
+import ModelSwitch from './ModelSwitch';
+import { cancelAuto, rerunCoursLot, resumeNow, startCoursRun } from './runCours';
+import { useJob } from './useJobs';
 import { Empty, Notice, Quota, Section } from './kit';
 import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
 
@@ -52,10 +55,11 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
   const canvas = useRef<HTMLCanvasElement>(null);
   const preview = useRef<HTMLDivElement>(null);
   const [imgUrl, setImgUrl] = useState('');
-  const [live, setLive] = useState('');
-  const [runningId, setRunningId] = useState<string | null>(null);
-  const auto = useRef<{ n: number; timer?: number }>({ n: 0 });
-  useEffect(() => () => window.clearTimeout(auto.current.timer), []);
+  // La transcription vit hors de ce composant : elle continue quand on change d'onglet, et son état est relu ici au retour.
+  const job = useJob('cours');
+  const jobBusy = job?.state === 'running';
+  const runningId = jobBusy ? (job?.ref ?? null) : null;
+  const finished = job && (job.state === 'done' || job.state === 'error') && !job.dismissed ? job : null;
 
   const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => ''), (lot, md) => verifyLot(lot, md)), [db]);
 
@@ -69,7 +73,8 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
     setUsed(`${u.day}/${u.limit}`);
   }, [db, queue]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  // Les lots changent à chaque étape : on relit la liste quand la tâche avance ou change d'état (pas à chaque message).
+  useEffect(() => { void refresh(); }, [refresh, job?.step, job?.state]);
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length || !db) return;
@@ -102,49 +107,18 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
     } catch { setMsg("Impossible de lire ce fichier. Vérifie que c'est un PDF, une image ou un fichier texte"); } finally { setBusy(false); }
   };
 
-  /** File d'import branchée sur Gemini : reprises, modèle de secours, plafonds locaux, contrôle de chaque lot. */
-  const buildQueue = (onErr: (e: unknown) => void) => {
-    const s = getSettings();
-    const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
-    const cfg: RobustCfg = { key: s.geminiKey, models: modelsOf(s), budget, onEvent: (e) => setLive(e.message) };
-    return queue(async (lot) => {
-      try { return await transcribeLot(lot, { llm: (l) => transcribeRobust({ cfg, lot: l }) }); }
-      catch (e) { onErr(e); throw e; }
-    });
+  const run = async (id: string, title: string) => {
+    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+    if (!db) return;
+    setMsg('');
+    void startCoursRun(db, id, title);
   };
 
-  const run = async (id: string) => {
+  const rerunLot = async (id: string, i: number, title: string) => {
     if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
-    window.clearTimeout(auto.current.timer);
-    let last: unknown;
-    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
-    try {
-      const r = await buildQueue((e) => { last = e; }).run(id);
-      if (r === 'done') {
-        auto.current.n = 0;
-        setMsg('Transcription terminée. Relis les lots marqués « À contrôler »');
-      } else {
-        const retryable = last instanceof NetworkError || (last instanceof RateLimitError && last.retryAfterSec <= 120);
-        if (retryable && auto.current.n < 3 && navigator.onLine !== false) {
-          auto.current.n += 1;
-          const delay = last instanceof RateLimitError ? last.retryAfterSec + 1 : 30;
-          setMsg(`${messageFor(last)}. Nouvel essai automatique dans ${delay} s (${auto.current.n}/3). La progression est gardée`);
-          auto.current.timer = window.setTimeout(() => void run(id), delay * 1000);
-        } else {
-          setMsg(last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
-        }
-      }
-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
-  };
-
-  const rerunLot = async (id: string, i: number) => {
-    if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
-    window.clearTimeout(auto.current.timer);
-    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
-    try {
-      const st = await buildQueue(() => undefined).rerun(id, i);
-      setMsg(st.state === 'ok' ? `Lot ${i + 1} relu et vérifié` : `Lot ${i + 1} retranscrit, mais il reste à contrôler`);
-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
+    if (!db) return;
+    setMsg('');
+    void rerunCoursLot(db, id, i, title);
   };
 
   const openReview = async (id: string) => {
@@ -255,14 +229,20 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <button className="btn" disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
             <span className="sp" />
+            <ModelSwitch compact />
             <Quota used={used} />
           </div>
         </Section>
       </div>
       {msg && <Notice kind={/impossible|refus|échec|erreur/i.test(msg) ? 'error' : 'info'}>{msg}</Notice>}
+      {!msg && finished && (
+        <Notice kind={finished.outcome === 'ok' ? 'ok' : 'error'} action={<button onClick={() => dismissJob('cours')}>Fermer</button>}>{finished.message}</Notice>
+      )}
       <h2 className="h2">Imports en cours <small>{rows.length > 0 ? `${rows.length}` : ''}</small></h2>
       {rows.length === 0 && <Empty title="Aucun import">Dépose un PDF ou des photos ci-dessus : la progression de chaque lot s’affichera ici.</Empty>}
-      {live && <p role="status" aria-live="polite" className="muted">{live}</p>}
+      {job && (job.state === 'running' || job.state === 'waiting') && (
+        <div className="card"><LiveProgress job={job} onResume={resumeNow} onCancel={cancelAuto} /></div>
+      )}
       <ul className="rows">
       {rows.map((r) => {
         const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
@@ -276,7 +256,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
                 <small>{r.meta?.source} · {r.done} sur {r.total} lots</small>
               </div>
               <div className="acts">
-                <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+                <button className="btn" disabled={busy || jobBusy || r.done >= r.total} onClick={() => void run(r.id, r.meta?.chapitre ?? r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
                 <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
                 <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
               </div>
@@ -290,7 +270,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
                     <StatusBadge state={stateOf(l, i)} />
                     <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
                     <span className="note">{describeLot(l)}</span>
-                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
+                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy || jobBusy} onClick={() => void rerunLot(r.id, i, r.meta?.chapitre ?? r.id)}>Relancer ce lot</button>}
                   </li>
                 ))}
               </ul>
@@ -299,7 +279,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db | 
         );
       })}
       </ul>
-      <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
+      <AttemptLog refreshKey={`${msg}|${rows.length}|${job?.state}|${job?.step}`} />
     </div>
   );
 }

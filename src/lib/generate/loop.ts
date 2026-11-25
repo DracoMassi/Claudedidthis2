@@ -8,6 +8,8 @@ export type GenerateDeps = {
   lint(f: Fiche): Problem[];
   render(f: Fiche): { katexErrors: string[]; overflow: number[] };
 };
+/** Nombre maximal de tours de génération et de correction. */
+export const MAX_TOURS = 4;
 export type GenerateResult = {
   ok: boolean; tours: number; fiche?: Fiche; last?: string; problems: Problem[];
   /** Erreur qui a interrompu la boucle (quota, réseau, clé) : le dernier essai reste dans `last`. */
@@ -16,7 +18,7 @@ export type GenerateResult = {
 
 /** Boucle de vérification : au plus `maxTours` tours ; les problèmes de chaque tour repartent au modèle. */
 export async function generateFiche(
-  _brief: Brief, prompt: { system: string; user: string }, deps: GenerateDeps, maxTours = 4,
+  _brief: Brief, prompt: { system: string; user: string }, deps: GenerateDeps, maxTours = MAX_TOURS,
 ): Promise<GenerateResult> {
   const messages: Msg[] = [{ role: 'user', text: prompt.user }];
   let last: string | undefined;

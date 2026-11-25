@@ -10,7 +10,9 @@ export class RateLimitError extends Error {
   }
 }
 export class AuthError extends Error {
-  constructor(message = 'Clé ou jeton refusé') { super(message); this.name = 'AuthError'; }
+  /** Code HTTP d'origine quand on le connaît : 401 (jeton refusé) ou 403 (permission manquante). */
+  status?: number;
+  constructor(message = 'Clé ou jeton refusé', status?: number) { super(message); this.name = 'AuthError'; this.status = status; }
 }
 export class NetworkError extends Error {
   constructor(message = 'Pas de réponse du réseau') { super(message); this.name = 'NetworkError'; }

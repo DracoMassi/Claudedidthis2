@@ -17,6 +17,8 @@ import AsyncButton from './AsyncButton';
 import { TextArea, TextField } from './Field';
 import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
 import { messageFor } from './messages';
+import PaletteQuick from './PaletteQuick';
+import { useFichePalette } from './useFichePalette';
 import { Empty, Notice } from './kit';
 import { StatusBadge } from './status';
 
@@ -65,8 +67,9 @@ export default function Review({ repo, db, draft, path, onGoto }: Props) {
     // Contrôles mesurés hors écran : l'aperçu peut être masqué (onglets en portrait) et un élément masqué n'a pas de hauteur.
     const mesure = renderOffscreen(fiche);
     setChecks({ schema: validateFiche(fiche), lint: lintLatex(fiche), katex: mesure.katexErrors, overflow: mesure.overflow });
-    if (preview.current) renderFiche(preview.current, fiche);
   }, [fiche]);
+  const palette = useFichePalette();
+  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche, palette); }, [fiche, palette]);
 
   const updateBlock = (i: number, j: number, key: string, value: unknown) =>
     setFiche((f) => f && { ...f, pages: f.pages.map((p, pi) => (pi !== i ? p : { ...p, blocks: p.blocks.map((b, bj) => (bj !== j ? b : { ...b, [key]: value })) })) });
@@ -181,6 +184,7 @@ export default function Review({ repo, db, draft, path, onGoto }: Props) {
           </details>
         </div>
         <div className={`pane${tab === 'preview' ? '' : ' hidden'}`}>
+          <PaletteQuick />
           <div className="export-root previewbox" ref={preview} />
         </div>
       </div>

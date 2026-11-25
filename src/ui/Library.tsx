@@ -5,7 +5,12 @@ import { printPages } from '../lib/export/pdf';
 import { exportPng, isLikelyBlank } from '../lib/export/png';
 import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
 import { StatusBadge } from './status';
+import BlockPicker from './BlockPicker';
+import PaletteQuick from './PaletteQuick';
+import { useFichePalette } from './useFichePalette';
+import { refFromFiche, type Ref } from '../lib/generate/refs';
 import { Empty, Notice } from './kit';
+import { libraryMessage } from '../lib/github/diagnose';
 import type { GithubRepo } from '../lib/github/repo';
 import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
 import { renderFiche } from '../lib/render/renderFiche';
@@ -13,9 +18,13 @@ import { validateFiche } from '../lib/schema/validate';
 import type { Db } from '../lib/storage/db';
 import type { Brief, Fiche } from '../lib/types';
 
-type Props = { repo: GithubRepo | null; db: Db | null; onEdit?: (path: string) => void; onRedo?: (brief: Brief) => void };
+type Props = {
+  repo: GithubRepo | null; db: Db | null; onEdit?: (path: string) => void; onRedo?: (brief: Brief) => void;
+  /** Envoie des blocs de la fiche ouverte vers Générer (références de génération). */
+  onSendRefs?: (ref: Ref) => void;
+};
 
-export default function Library({ repo, db, onEdit, onRedo }: Props) {
+export default function Library({ repo, db, onEdit, onRedo, onSendRefs }: Props) {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [msg, setMsg] = useState('');
   const [matiere, setMatiere] = useState('');
@@ -27,7 +36,7 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
 
   useEffect(() => {
     if (!repo || !db) return;
-    loadIndex(repo, db).then(setItems, () => setMsg('Impossible de charger la bibliothèque. Vérifie ton jeton dans Réglages'));
+    loadIndex(repo, db).then(setItems, (e) => setMsg(libraryMessage(e)));
   }, [repo, db]);
 
   const shown = useMemo(() => filterItems(items, { matiere: matiere || undefined, text }), [items, matiere, text]);
@@ -45,7 +54,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
     } catch { setMsg("Impossible d'ouvrir ce fichier. Réessayer"); }
   };
 
-  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
+  const palette = useFichePalette();
+  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche, palette); }, [fiche, palette]);
 
   const [report, setReport] = useState<PdfReport | null>(null);
 
@@ -122,6 +132,7 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
             {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer</button>}
             <span className="sp" />
             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
+            {fiche && onSendRefs && <button className="btn ghost" onClick={() => onSendRefs(refFromFiche(fiche, sel.path))}>Envoyer vers Générer</button>}
             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir du brief</button>}
             {fiche && (
               <button className="btn ghost" onClick={async () => {
@@ -136,6 +147,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
               {report.problems.map((p, i) => <span key={i}>{p}</span>)}
             </div>
           )}
+          {fiche && <PaletteQuick />}
+          {fiche && onSendRefs && <BlockPicker fiche={fiche} path={sel.path} onSend={onSendRefs} />}
           {!fiche && !cours && !msg && <p className="muted">Ouverture…</p>}
           {fiche && <div className="print-area export-root previewbox" ref={preview} />}
           {cours && <pre className="cours-text">{cours}</pre>}

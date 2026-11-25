@@ -13,6 +13,8 @@ export type LotStatus = {
 };
 export type LotInfo = LotStatus & { index: number; fromPage: number; toPage: number };
 export type Verify = (lot: Lot, md: string) => Promise<LotCheck>;
+/** Événement de progression : un lot commence (`start`) ou vient d'être traité (`done`, avec son verdict). */
+export type QueueProgress = { index: number; total: number; phase: 'start' | 'done'; state?: LotStatus['state'] };
 type State = { lots: StoredLot[]; results: string[]; next: number; status?: LotStatus[] };
 const key = (id: string) => `import:${id}`;
 const INDEX = 'import:index';
@@ -85,9 +87,10 @@ export class ImportQueue {
   }
 
   /** Traite les lots restants. Quota ou réseau : s'arrête avec 'paused' sans perdre ce qui est fait. */
-  async run(id: string): Promise<'done' | 'paused'> {
+  async run(id: string, onProgress?: (p: QueueProgress) => void): Promise<'done' | 'paused'> {
     const st = await this.load(id);
     for (let i = st.next; i < st.lots.length; i++) {
+      onProgress?.({ index: i, total: st.lots.length, phase: 'start' });
       try {
         await this.process(st, i);
       } catch (e) {
@@ -96,14 +99,16 @@ export class ImportQueue {
       }
       st.next = i + 1;
       await this.save(id, st);
+      onProgress?.({ index: i, total: st.lots.length, phase: 'done', state: st.status?.[i]?.state });
     }
     return 'done';
   }
 
   /** Relance un seul lot déjà traité (suspect ou en échec) ; les erreurs de quota et de réseau remontent à l'appelant. */
-  async rerun(id: string, i: number): Promise<LotStatus> {
+  async rerun(id: string, i: number, onProgress?: (p: QueueProgress) => void): Promise<LotStatus> {
     const st = await this.load(id);
     if (i < 0 || i >= st.next) throw new Error(`Lot ${i} pas encore traité`);
+    onProgress?.({ index: i, total: st.lots.length, phase: 'start' });
     await this.process(st, i);
     await this.save(id, st);
     return st.status?.[i] ?? { state: 'ok' };

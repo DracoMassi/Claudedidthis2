@@ -1,4 +1,4 @@
-import { AuthError, ConflictError, NetworkError, NotFoundError } from '../errors';
+import { AuthError, ConflictError, NetworkError, NotFoundError, RateLimitError } from '../errors';
 
 export type TreeEntry = { path: string; type: 'blob' | 'tree'; sha: string };
 
@@ -20,7 +20,7 @@ export class GithubRepo {
   private token: string;
   private fetchImpl: typeof fetch;
   constructor(owner: string, name: string, token: string, fetchImpl: typeof fetch = (...a) => fetch(...a)) {
-    this.owner = owner; this.name = name; this.token = token; this.fetchImpl = fetchImpl;
+    this.owner = owner.trim(); this.name = name.trim(); this.token = token.trim(); this.fetchImpl = fetchImpl;
   }
 
   private async request(path: string, init: RequestInit = {}, accept = 'application/vnd.github+json'): Promise<Response> {
@@ -33,7 +33,14 @@ export class GithubRepo {
     } catch {
       throw new NetworkError();
     }
-    if (r.status === 401 || r.status === 403) throw new AuthError('Jeton refusé ou expiré');
+    if (r.status === 401) throw new AuthError('Jeton refusé ou expiré', 401);
+    if (r.status === 403) {
+      if (r.headers.get('x-ratelimit-remaining') === '0') {
+        const reset = Number(r.headers.get('x-ratelimit-reset'));
+        throw new RateLimitError(Number.isFinite(reset) && reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : 60);
+      }
+      throw new AuthError('Jeton sans la permission nécessaire', 403);
+    }
     if (r.status === 404) throw new NotFoundError();
     if (r.status === 409 || r.status === 422) throw new ConflictError();
     if (!r.ok) throw new NetworkError(`GitHub a répondu ${r.status}`);
