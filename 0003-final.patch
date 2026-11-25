@@ -1,0 +1,2804 @@
+From 89e72b0a6ef52997697e38c147727aef82b4e241 Mon Sep 17 00:00:00 2001
+From: Sequentia <dev@example.com>
+Date: Wed, 25 Nov 2026 12:51:47 +0000
+Subject: [PATCH] =?UTF-8?q?Diagnostic=20GitHub,=20bascule=20de=20mod=C3=A8?=
+ =?UTF-8?q?le,=20progression=20conserv=C3=A9e=20entre=20onglets,=20blocs?=
+ =?UTF-8?q?=20de=20la=20biblioth=C3=A8que=20vers=20G=C3=A9n=C3=A9rer,=20co?=
+ =?UTF-8?q?uleurs=20des=20fiches?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ README.md                       |   8 ++
+ src/App.tsx                     |  30 +++++-
+ src/lib/cours/queue.ts          |   9 +-
+ src/lib/errors.ts               |   4 +-
+ src/lib/gemini/robust.ts        |  12 ++-
+ src/lib/generate/context.ts     |   6 +-
+ src/lib/generate/loop.ts        |   4 +-
+ src/lib/generate/refs.ts        |  94 ++++++++++++++++++
+ src/lib/github/diagnose.ts      |  49 ++++++++++
+ src/lib/github/repo.ts          |  13 ++-
+ src/lib/jobs/store.ts           |  72 ++++++++++++++
+ src/lib/render/palette.ts       |  52 ++++++++++
+ src/lib/render/renderFiche.ts   |   4 +-
+ src/lib/storage/settings.ts     |   8 +-
+ src/theme/design.css            |  39 ++++++++
+ src/ui/BlockPicker.tsx          |  39 ++++++++
+ src/ui/Cours.tsx                |  82 ++++++----------
+ src/ui/FichePaletteSettings.tsx |  58 ++++++++++++
+ src/ui/Generate.tsx             | 163 ++++++++++++++++++++++----------
+ src/ui/JobBar.tsx               |  41 ++++++++
+ src/ui/Library.tsx              |  21 +++-
+ src/ui/LiveProgress.tsx         |  41 ++++++++
+ src/ui/ModelSwitch.tsx          |  35 +++++++
+ src/ui/PaletteQuick.tsx         |  25 +++++
+ src/ui/Review.tsx               |   6 +-
+ src/ui/Settings.tsx             |  19 ++--
+ src/ui/draftFrom.ts             |  13 +++
+ src/ui/geminiDeps.ts            |  17 +++-
+ src/ui/messages.ts              |   3 +-
+ src/ui/runCours.ts              | 102 ++++++++++++++++++++
+ src/ui/runGenerate.ts           |  45 +++++++++
+ src/ui/useFichePalette.ts       |  15 +++
+ src/ui/useJobs.ts               |  18 ++++
+ tests/diagnose.test.ts          |  51 ++++++++++
+ tests/gemini2.test.ts           |  85 ++++++-----------
+ tests/jobs.test.ts              |  39 ++++++++
+ tests/palette.test.ts           |  29 ++++++
+ tests/pdfbuild.test.ts          |  35 +++----
+ tests/queue2.test.ts            |  96 ++++++++-----------
+ tests/refs.test.ts              |  63 ++++++++++++
+ tests/retry.test.ts             |  84 ++++++----------
+ tests/runners.test.ts           | 105 ++++++++++++++++++++
+ tests/ui-smoke.test.tsx         | 111 ++++++++++++++++++++++
+ tests/verify.test.ts            |  79 ++++------------
+ 44 files changed, 1529 insertions(+), 395 deletions(-)
+ create mode 100644 src/lib/generate/refs.ts
+ create mode 100644 src/lib/github/diagnose.ts
+ create mode 100644 src/lib/jobs/store.ts
+ create mode 100644 src/lib/render/palette.ts
+ create mode 100644 src/ui/BlockPicker.tsx
+ create mode 100644 src/ui/FichePaletteSettings.tsx
+ create mode 100644 src/ui/JobBar.tsx
+ create mode 100644 src/ui/LiveProgress.tsx
+ create mode 100644 src/ui/ModelSwitch.tsx
+ create mode 100644 src/ui/PaletteQuick.tsx
+ create mode 100644 src/ui/draftFrom.ts
+ create mode 100644 src/ui/runCours.ts
+ create mode 100644 src/ui/runGenerate.ts
+ create mode 100644 src/ui/useFichePalette.ts
+ create mode 100644 src/ui/useJobs.ts
+ create mode 100644 tests/diagnose.test.ts
+ create mode 100644 tests/jobs.test.ts
+ create mode 100644 tests/palette.test.ts
+ create mode 100644 tests/refs.test.ts
+ create mode 100644 tests/runners.test.ts
+ create mode 100644 tests/ui-smoke.test.tsx
+
+diff --git a/README.md b/README.md
+index a3d89a1..2787ef7 100644
+--- a/README.md
++++ b/README.md
+@@ -12,6 +12,7 @@ Site statique (GitHub Pages) pour générer, relire, valider et exporter des fic
+ 3. **Jeton GitHub** (sur ton compte) : *Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*.
+    - *Repository access* : **Only select repositories**, uniquement `Fiches`.
+    - *Permissions → Repository permissions → Contents* : **Read and write**.
++   Le test GitHub des Réglages vérifie maintenant la lecture du contenu : un jeton qui voit le dépôt mais n'a pas « Contents » est signalé avec la marche à suivre (avant, la bibliothèque affichait « Vérifie ton jeton » pour toutes les erreurs).
+    - *Expiration* : une date (par exemple 90 jours).
+ 4. **Réglages dans l'app** : colle ta clé Gemini (Google AI Studio), le jeton, le propriétaire et le nom du dépôt (`Fiches`), puis « Tester la connexion » pour GitHub et pour Gemini. Ces valeurs restent sur l'appareil.
+ 5. **Écran d'accueil de l'iPad** : dans Safari, *Partager → Sur l'écran d'accueil*. Safari peut effacer les données d'un site visité rarement, sauf s'il est installé ainsi (à vérifier sur ton iPad).
+@@ -56,6 +57,13 @@ Les tests automatiques ne couvrent ni les écrans, ni Safari. Coche chaque ligne
+ 
+ À vérifier sur l'iPad : un PDF de plusieurs pages en mode avion à mi-parcours (pause puis reprise), un lot suspect relancé seul, et l'export PDF vérifié d'une fiche de 3 pages.
+ 
++### Tâches longues, bascule de modèle, références et couleurs
++
++- **Progression conservée** : la génération et la transcription tournent hors des écrans. En changeant d'onglet, un bandeau garde la progression visible (phrase d'état, étape, temps écoulé qui défile, compte à rebours avant reprise), le titre de l'onglet du navigateur affiche « ⏳ Tour 2/4 », et une alerte prévient avant de recharger la page. Sur iPad, mettre l'appli en arrière-plan peut suspendre la requête en cours : reste dans l'appli pendant une génération.
++- **Modèle utilisé** : bouton Principal / Secours dans Réglages, Générer et Cours. Le modèle choisi passe en premier, l'autre sert de repli ; la bascule agit dès le prochain envoi.
++- **Bibliothèque vers Générer** : « Envoyer vers Générer » (fiche entière) ou « Choisir des blocs pour Générer » (cases à cocher). Les blocs deviennent des références dans Générer (retrait bloc par bloc, mode « s'en inspirer » ou « les reprendre dans la fiche »). On peut aussi déposer un .json de fiche ou coller du JSON. Les références sont gardées sur l'appareil.
++- **Couleurs des fiches** : Réglages → Couleurs des fiches (palettes prêtes ou personnalisées : titres, sous-titres et pièges, logo), et un choix rapide à côté de l'aperçu. Elles s'appliquent à l'aperçu, à l'impression et aux exports PDF et PNG de toutes les fiches de cet appareil ; elles ne sont pas écrites dans le JSON de la fiche (le schéma refuse les champs inconnus).
++
+ ## Limites connues
+ 
+ - Le site ne se recharge pas hors connexion (pas de service worker).
+diff --git a/src/App.tsx b/src/App.tsx
+index 374c803..5b8a31e 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,6 +1,10 @@
+ import { useEffect, useState } from 'react';
+ import Cours from './ui/Cours';
+ import Generate from './ui/Generate';
++import JobBar from './ui/JobBar';
++import { useJobs } from './ui/useJobs';
++import { EMPTY_REFS, loadRefs, mergeRef, saveRefs, type Ref, type RefSet } from './lib/generate/refs';
++import type { JobKind } from './lib/jobs/store';
+ import Library from './ui/Library';
+ import Review from './ui/Review';
+ import type { Brief } from './lib/types';
+@@ -12,6 +16,8 @@ import { getSettings } from './lib/storage/settings';
+ 
+ export const ENTREES = ['Générer', 'Relire', 'Bibliothèque', 'Cours', 'Réglages'] as const;
+ export type Entree = (typeof ENTREES)[number];
++/** Onglet qui affiche lui-même la progression de chaque type de tâche. */
++const TAB_OF: Partial<Record<Entree, JobKind>> = { Générer: 'generate', Cours: 'cours' };
+ 
+ const LEAD: Record<Entree, string> = {
+   Générer: 'Décris le sujet, Gemini écrit la fiche et la contrôle jusqu’à 4 fois avant de te la rendre.',
+@@ -29,6 +35,9 @@ export default function App() {
+   const [draft, setDraft] = useState<Draft | null>(null);
+   const [editPath, setEditPath] = useState<string | null>(null);
+   const [nbDrafts, setNbDrafts] = useState(0);
++  const [refs, setRefs] = useState<RefSet>(EMPTY_REFS);
++  const jobs = useJobs();
++  const active = Object.values(jobs).find((j) => j && (j.state === 'running' || j.state === 'waiting'));
+   const [, setTick] = useState(0);
+   const quadrille = entree !== 'Relire';
+ 
+@@ -38,7 +47,20 @@ export default function App() {
+     window.addEventListener('sequentia-settings-changed', f);
+     return () => window.removeEventListener('sequentia-settings-changed', f);
+   }, []);
+-  useEffect(() => { window.scrollTo({ top: 0 }); document.title = `${entree} · Séquentia`; }, [entree]);
++  useEffect(() => { window.scrollTo({ top: 0 }); }, [entree]);
++  // Le titre de l'onglet du navigateur montre l'avancement même quand on regarde ailleurs.
++  const activeLabel = active ? `${active.kind === 'generate' ? 'Tour' : 'Lot'} ${active.step}/${active.steps}` : '';
++  useEffect(() => { document.title = `${active ? `⏳ ${activeLabel} · ` : ''}${entree} · Séquentia`; }, [entree, active, activeLabel]);
++  // Recharger la page pendant une tâche la ferait perdre : on prévient.
++  useEffect(() => {
++    if (!active) return;
++    const f = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
++    window.addEventListener('beforeunload', f);
++    return () => window.removeEventListener('beforeunload', f);
++  }, [active]);
++  useEffect(() => { if (db) void loadRefs(db).then(setRefs); }, [db]);
++  const changeRefs = (next: RefSet) => { setRefs(next); if (db) void saveRefs(db, next); };
++  const sendRef = (ref: Ref) => { changeRefs(mergeRef(refs, ref)); setEntree('Générer'); };
+ 
+   const s = getSettings();
+   const manque = !repo ? 'ton jeton GitHub et ton dépôt' : !s.geminiKey ? 'ta clé Gemini' : '';
+@@ -50,10 +72,12 @@ export default function App() {
+         {ENTREES.map((e) => (
+           <button key={e} aria-current={e === entree ? 'page' : undefined} onClick={() => setEntree(e)}>
+             {e}
++            {TAB_OF[e] && jobs[TAB_OF[e] as JobKind] && (jobs[TAB_OF[e] as JobKind]?.state === 'running' || jobs[TAB_OF[e] as JobKind]?.state === 'waiting') && <span className="live" role="img" aria-label="tâche en cours" />}
+             {e === 'Générer' && nbDrafts > 0 && <span className="dot" aria-label={`${nbDrafts} brouillon${nbDrafts > 1 ? 's' : ''}`}>{nbDrafts}</span>}
+           </button>
+         ))}
+       </nav>
++      <JobBar entree={entree} onGo={setEntree} />
+       <main className="screen" key={entree}>
+         <PageHead title={entree} lead={LEAD[entree]} />
+         {manque && entree !== 'Réglages' && (
+@@ -64,8 +88,8 @@ export default function App() {
+         {entree === 'Réglages' ? <Settings />
+           : entree === 'Cours' ? <Cours repo={repo} db={db} />
+           : entree === 'Relire' ? <Review repo={repo} db={db} draft={draft} path={editPath} onGoto={(e) => setEntree(e)} />
+-          : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} onOpenDraft={(d) => { setDraft(d); setEditPath(null); setEntree('Relire'); }} />
+-          : <Library repo={repo} db={db} onEdit={(p) => { setEditPath(p); setDraft(null); setEntree('Relire'); }} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} />}
++          : entree === 'Générer' ? <Generate repo={repo} db={db} initialBrief={redo} refs={refs} onRefsChange={changeRefs} onGoLibrary={() => setEntree('Bibliothèque')} onOpenDraft={(d) => { setDraft(d); setEditPath(null); setEntree('Relire'); }} />
++          : <Library repo={repo} db={db} onEdit={(p) => { setEditPath(p); setDraft(null); setEntree('Relire'); }} onRedo={(b) => { setRedo(b); setEntree('Générer'); }} onSendRefs={sendRef} />}
+       </main>
+     </div>
+   );
+diff --git a/src/lib/cours/queue.ts b/src/lib/cours/queue.ts
+index 227efbd..9bfd1b8 100644
+--- a/src/lib/cours/queue.ts
++++ b/src/lib/cours/queue.ts
+@@ -13,6 +13,8 @@ export type LotStatus = {
+ };
+ export type LotInfo = LotStatus & { index: number; fromPage: number; toPage: number };
+ export type Verify = (lot: Lot, md: string) => Promise<LotCheck>;
++/** Événement de progression : un lot commence (`start`) ou vient d'être traité (`done`, avec son verdict). */
++export type QueueProgress = { index: number; total: number; phase: 'start' | 'done'; state?: LotStatus['state'] };
+ type State = { lots: StoredLot[]; results: string[]; next: number; status?: LotStatus[] };
+ const key = (id: string) => `import:${id}`;
+ const INDEX = 'import:index';
+@@ -85,9 +87,10 @@ export class ImportQueue {
+   }
+ 
+   /** Traite les lots restants. Quota ou réseau : s'arrête avec 'paused' sans perdre ce qui est fait. */
+-  async run(id: string): Promise<'done' | 'paused'> {
++  async run(id: string, onProgress?: (p: QueueProgress) => void): Promise<'done' | 'paused'> {
+     const st = await this.load(id);
+     for (let i = st.next; i < st.lots.length; i++) {
++      onProgress?.({ index: i, total: st.lots.length, phase: 'start' });
+       try {
+         await this.process(st, i);
+       } catch (e) {
+@@ -96,14 +99,16 @@ export class ImportQueue {
+       }
+       st.next = i + 1;
+       await this.save(id, st);
++      onProgress?.({ index: i, total: st.lots.length, phase: 'done', state: st.status?.[i]?.state });
+     }
+     return 'done';
+   }
+ 
+   /** Relance un seul lot déjà traité (suspect ou en échec) ; les erreurs de quota et de réseau remontent à l'appelant. */
+-  async rerun(id: string, i: number): Promise<LotStatus> {
++  async rerun(id: string, i: number, onProgress?: (p: QueueProgress) => void): Promise<LotStatus> {
+     const st = await this.load(id);
+     if (i < 0 || i >= st.next) throw new Error(`Lot ${i} pas encore traité`);
++    onProgress?.({ index: i, total: st.lots.length, phase: 'start' });
+     await this.process(st, i);
+     await this.save(id, st);
+     return st.status?.[i] ?? { state: 'ok' };
+diff --git a/src/lib/errors.ts b/src/lib/errors.ts
+index d959877..d4c902a 100644
+--- a/src/lib/errors.ts
++++ b/src/lib/errors.ts
+@@ -10,7 +10,9 @@ export class RateLimitError extends Error {
+   }
+ }
+ export class AuthError extends Error {
+-  constructor(message = 'Clé ou jeton refusé') { super(message); this.name = 'AuthError'; }
++  /** Code HTTP d'origine quand on le connaît : 401 (jeton refusé) ou 403 (permission manquante). */
++  status?: number;
++  constructor(message = 'Clé ou jeton refusé', status?: number) { super(message); this.name = 'AuthError'; this.status = status; }
+ }
+ export class NetworkError extends Error {
+   constructor(message = 'Pas de réponse du réseau') { super(message); this.name = 'NetworkError'; }
+diff --git a/src/lib/gemini/robust.ts b/src/lib/gemini/robust.ts
+index 3a33e1e..397c4ac 100644
+--- a/src/lib/gemini/robust.ts
++++ b/src/lib/gemini/robust.ts
+@@ -14,9 +14,15 @@ export type RobustCfg = {
+   retry?: Partial<RetryOpts>;
+ };
+ 
+-/** Liste de modèles à essayer d'après les réglages (principal, puis secours s'il est renseigné). */
+-export const modelsOf = (s: { model: string; modelSecours?: string }): string[] =>
+-  [s.model, s.modelSecours ?? ''].map((m) => m.trim()).filter(Boolean);
++/**
++ * Modèles à essayer, dans l'ordre. Par défaut le principal puis le secours ; si le secours est « actif » (bouton de bascule),
++ * il passe en premier et le principal devient le repli. Sans modèle de secours renseigné, la bascule est sans effet.
++ */
++export const modelsOf = (s: { model: string; modelSecours?: string; modeleActif?: 'principal' | 'secours' }): string[] => {
++  const main = s.model.trim();
++  const alt = (s.modelSecours ?? '').trim();
++  return (s.modeleActif === 'secours' && alt ? [alt, main] : [main, alt]).filter(Boolean);
++};
+ 
+ /** Un appel Gemini avec plafond local, reprises, attente exponentielle et modèle de secours. */
+ export function robustPost(cfg: RobustCfg, body: unknown): Promise<GeminiResult> {
+diff --git a/src/lib/generate/context.ts b/src/lib/generate/context.ts
+index e4ffc54..b7d53d9 100644
+--- a/src/lib/generate/context.ts
++++ b/src/lib/generate/context.ts
+@@ -1,4 +1,5 @@
+ import type { Brief, Fiche, Statut } from '../types';
++import { refsToPrompt, type RefSet } from './refs';
+ import { splitSections } from './sections';
+ 
+ const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+@@ -30,7 +31,7 @@ export function pickCourseSections(cours: { md: string; statut: Statut }[], brie
+     .map((x) => `## ${x.titre}\n${x.texte}`);
+ }
+ 
+-export function buildPrompt(i: { charte: string; schema: object; examples: Fiche[]; sections: string[]; brief: Brief }): { system: string; user: string } {
++export function buildPrompt(i: { charte: string; schema: object; examples: Fiche[]; sections: string[]; brief: Brief; refs?: RefSet }): { system: string; user: string } {
+   const format = i.brief.format ?? 'fiche';
+   const system = `Tu es l'auteur des fiches Séquentia, niveau ${i.brief.niveau} (classes préparatoires et lycée).
+ Tu réponds UNIQUEMENT par un objet JSON conforme au schéma ci-dessous. Aucun texte autour.
+@@ -52,6 +53,7 @@ ${JSON.stringify(i.schema)}
+ `;
+   const ex = i.examples.length ? i.examples.map((f) => JSON.stringify(f)).join('\n---\n') : '(aucun exemple disponible)';
+   const cs = i.sections.length ? i.sections.join('\n---\n') : '(aucun extrait de cours disponible)';
+-  const user = `EXEMPLES DE FICHES (style à imiter) :\n${ex}\n\nEXTRAITS DE COURS (source de vérité) :\n${cs}\n\nBRIEF :\n${JSON.stringify(i.brief)}`;
++  const refs = i.refs ? refsToPrompt(i.refs) : '';
++  const user = `EXEMPLES DE FICHES (style à imiter) :\n${ex}\n\n${refs ? `${refs}\n\n` : ''}EXTRAITS DE COURS (source de vérité) :\n${cs}\n\nBRIEF :\n${JSON.stringify(i.brief)}`;
+   return { system, user };
+ }
+diff --git a/src/lib/generate/loop.ts b/src/lib/generate/loop.ts
+index 1f4284b..7b845e6 100644
+--- a/src/lib/generate/loop.ts
++++ b/src/lib/generate/loop.ts
+@@ -8,6 +8,8 @@ export type GenerateDeps = {
+   lint(f: Fiche): Problem[];
+   render(f: Fiche): { katexErrors: string[]; overflow: number[] };
+ };
++/** Nombre maximal de tours de génération et de correction. */
++export const MAX_TOURS = 4;
+ export type GenerateResult = {
+   ok: boolean; tours: number; fiche?: Fiche; last?: string; problems: Problem[];
+   /** Erreur qui a interrompu la boucle (quota, réseau, clé) : le dernier essai reste dans `last`. */
+@@ -16,7 +18,7 @@ export type GenerateResult = {
+ 
+ /** Boucle de vérification : au plus `maxTours` tours ; les problèmes de chaque tour repartent au modèle. */
+ export async function generateFiche(
+-  _brief: Brief, prompt: { system: string; user: string }, deps: GenerateDeps, maxTours = 4,
++  _brief: Brief, prompt: { system: string; user: string }, deps: GenerateDeps, maxTours = MAX_TOURS,
+ ): Promise<GenerateResult> {
+   const messages: Msg[] = [{ role: 'user', text: prompt.user }];
+   let last: string | undefined;
+diff --git a/src/lib/generate/refs.ts b/src/lib/generate/refs.ts
+new file mode 100644
+index 0000000..5fdb16f
+--- /dev/null
++++ b/src/lib/generate/refs.ts
+@@ -0,0 +1,94 @@
++import type { Db } from '../storage/db';
++import type { Block, Fiche } from '../types';
++
++/** Un bloc de fiche (définition, théorème, QCM…) mis de côté pour la génération. `page` et `index` sont comptés depuis 0. */
++export type RefBlock = { page: number; index: number; block: Block };
++/** Les blocs retenus d'une même fiche (ou d'un JSON collé). */
++export type Ref = { id: string; titre: string; path?: string; matiere?: string; blocks: RefBlock[] };
++/** inspire : style et structure ; reprendre : les blocs sont intégrés à la fiche. */
++export type RefMode = 'inspire' | 'reprendre';
++export type RefSet = { items: Ref[]; mode: RefMode };
++export const EMPTY_REFS: RefSet = { items: [], mode: 'inspire' };
++
++const TYPES: Record<string, string> = {
++  definition: 'Définition', theoreme: 'Théorème', demonstration: 'Démonstration', methode: 'Méthode', formule: 'Formule',
++  piege: 'Piège', exemple: 'Exemple', qcm: 'QCM', proprietes: 'Propriétés', figure: 'Figure',
++};
++const str = (v: unknown) => (typeof v === 'string' ? v : '');
++const clip = (t: string, n = 60) => { const x = t.replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 1)}…` : x; };
++
++/** Libellé court d'un bloc pour les listes : « Théorème : Rolle », « Formule : \int_a^b… ». */
++export function blockLabel(b: Block): string {
++  const type = TYPES[b.type] ?? b.type;
++  const detail = str(b.terme) || str(b.nom) || str(b.titre) || str(b.question) || str(b.latex) || str(b.enonce) || str(b.texte) || str(b.legende);
++  return detail ? `${type} : ${clip(detail)}` : type;
++}
++
++const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
++const isBlock = (x: unknown): x is Block => isObj(x) && typeof x.type === 'string';
++const isFiche = (x: unknown): x is Fiche => isObj(x) && Array.isArray(x.pages) && isObj(x.meta);
++const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
++
++/** Blocs d'une fiche ; `pick(page, index)` permet de n'en garder que certains (sans `pick` : toute la fiche). */
++export function refFromFiche(f: Fiche, path?: string, pick?: (page: number, index: number) => boolean): Ref {
++  const blocks = f.pages.flatMap((p, page) => p.blocks.map((block, index) => ({ page, index, block }))).filter((x) => !pick || pick(x.page, x.index));
++  return { id: path ?? `colle-${hash(JSON.stringify(f.pages))}`, titre: f.meta?.titre || 'Fiche sans titre', path, matiere: f.meta?.matiere, blocks };
++}
++
++/** Lit du JSON collé ou déposé : une fiche complète, un bloc, ou une liste de blocs. */
++export function refFromJson(text: string, name = 'JSON collé'): Ref {
++  let data: unknown;
++  try { data = JSON.parse(text); } catch { throw new Error("Ce texte n'est pas du JSON valide"); }
++  if (isFiche(data)) return refFromFiche(data);
++  const blocks = (Array.isArray(data) ? data : [data]).filter(isBlock).map((block, index) => ({ page: 0, index, block }));
++  if (!blocks.length) throw new Error('Aucun bloc reconnu : colle une fiche, un bloc ou une liste de blocs (chacun avec un champ « type »)');
++  return { id: `colle-${hash(JSON.stringify(blocks))}`, titre: name, blocks };
++}
++
++export const countBlocks = (set: RefSet): number => set.items.reduce((n, r) => n + r.blocks.length, 0);
++
++/** Ajoute les blocs d'une référence ; ceux déjà présents (même fiche, même position) ne sont pas dupliqués. */
++export function mergeRef(set: RefSet, ref: Ref): RefSet {
++  const cur = set.items.find((r) => r.id === ref.id);
++  if (!cur) return { ...set, items: [...set.items, ref] };
++  const has = new Set(cur.blocks.map((b) => `${b.page}.${b.index}`));
++  const added = ref.blocks.filter((b) => !has.has(`${b.page}.${b.index}`));
++  return { ...set, items: set.items.map((r) => (r.id === ref.id ? { ...r, blocks: [...r.blocks, ...added] } : r)) };
++}
++export const removeRef = (set: RefSet, id: string): RefSet => ({ ...set, items: set.items.filter((r) => r.id !== id) });
++export function removeBlock(set: RefSet, id: string, page: number, index: number): RefSet {
++  return { ...set, items: set.items.map((r) => (r.id === id ? { ...r, blocks: r.blocks.filter((b) => !(b.page === page && b.index === index)) } : r)).filter((r) => r.blocks.length > 0) };
++}
++
++const HEAD: Record<RefMode, string> = {
++  inspire: "RÉFÉRENCES CHOISIES PAR L'AUTEUR (blocs de fiches existantes) : inspire-toi de leur structure, de leur niveau de détail et de leurs notations pour la fiche demandée. Ne les recopie pas mot pour mot. Ne contredis jamais les extraits de cours.",
++  reprendre: "BLOCS À REPRENDRE (choisis par l'auteur dans ses fiches existantes) : intègre ces blocs dans la fiche, avec le même contenu et le LaTeX conservé ; ne les reformule que pour garder la cohérence de l'ensemble. Complète ensuite le reste du brief autour d'eux. Si un bloc contredit les extraits de cours, corrige-le.",
++};
++
++/** Texte à insérer dans la requête ; chaîne vide s'il n'y a aucun bloc. Au-delà de `maxChars`, les blocs restants sont omis et signalés. */
++export function refsToPrompt(set: RefSet, maxChars = 16000): string {
++  if (countBlocks(set) === 0) return '';
++  let used = 0, skipped = 0;
++  const parts: string[] = [];
++  for (const r of set.items) {
++    const lines: string[] = [];
++    for (const b of r.blocks) {
++      const j = JSON.stringify(b.block);
++      if (used + j.length > maxChars) { skipped++; continue; }
++      used += j.length;
++      lines.push(j);
++    }
++    if (lines.length) parts.push(`Fiche « ${r.titre} »${r.matiere ? ` (${r.matiere})` : ''} :\n${lines.join('\n')}`);
++  }
++  return `${HEAD[set.mode]}\n\n${parts.join('\n---\n')}${skipped ? `\n(${skipped} bloc${skipped > 1 ? 's' : ''} omis : trop volumineux)` : ''}`;
++}
++
++const KEY = 'generate-refs';
++export async function loadRefs(db: Db): Promise<RefSet> {
++  try {
++    const v = (await db.get(KEY)) as Partial<RefSet> | undefined;
++    if (v && Array.isArray(v.items)) return { items: v.items, mode: v.mode === 'reprendre' ? 'reprendre' : 'inspire' };
++  } catch { /* base illisible : repart de zéro */ }
++  return EMPTY_REFS;
++}
++export const saveRefs = (db: Db, set: RefSet): Promise<void> => db.put(KEY, set);
+diff --git a/src/lib/github/diagnose.ts b/src/lib/github/diagnose.ts
+new file mode 100644
+index 0000000..4cac2e1
+--- /dev/null
++++ b/src/lib/github/diagnose.ts
+@@ -0,0 +1,49 @@
++import { AuthError, ConflictError, NetworkError, NotFoundError, RateLimitError } from '../errors';
++
++const CONTENTS = 'Dans GitHub : Settings → Developer settings → Fine-grained tokens → ton jeton → Repository permissions → Contents : « Read and write ». Pense à choisir « Only select repositories » avec le dépôt Fiches.';
++const EXPIRED = 'GitHub refuse le jeton (401) : il est expiré, supprimé ou mal collé. Crée-en un nouveau et colle-le sans espace';
++const NOT_FOUND = 'Dépôt introuvable (404) : vérifie le propriétaire et le nom du dépôt. Si le dépôt est privé, le jeton doit y avoir accès (« Only select repositories »)';
++const EMPTY = 'Le dépôt est vide : ajoute-y un premier fichier, puis recharge';
++
++/** Explique pourquoi la bibliothèque n'a pas pu se charger, au lieu d'accuser toujours le jeton. */
++export function libraryMessage(e: unknown): string {
++  if (e instanceof AuthError) return e.status === 403 ? `GitHub refuse l'accès au contenu du dépôt (403) : le jeton n'a pas la permission « Contents ». ${CONTENTS}` : EXPIRED;
++  if (e instanceof NotFoundError) return NOT_FOUND;
++  if (e instanceof ConflictError) return EMPTY;
++  if (e instanceof RateLimitError) return `GitHub limite les requêtes. Réessaie dans ${e.retryAfterSec} s`;
++  if (e instanceof NetworkError) return "GitHub n'a pas répondu (réseau coupé ou GitHub indisponible). Réessaie";
++  return `Erreur inattendue : ${e instanceof Error ? e.message : String(e)}`;
++}
++
++/**
++ * Teste ce dont l'appli a réellement besoin : voir le dépôt (métadonnées) PUIS lire son contenu (permission Contents).
++ * Un jeton sans « Contents » passe le premier test mais échoue sur le second : c'est le piège des jetons fine-grained.
++ * Le message de réussite se termine par « connecté ».
++ */
++export async function diagnoseGithub(o: { owner: string; repo: string; token: string }, fetchImpl: typeof fetch = (...a) => fetch(...a)): Promise<{ ok: boolean; message: string }> {
++  const owner = o.owner.trim(), repo = o.repo.trim(), token = o.token.trim();
++  if (!owner || !repo || !token) return { ok: false, message: 'Renseigne le jeton, le propriétaire et le nom du dépôt' };
++  const get = async (path: string): Promise<Response | null> => {
++    try {
++      return await fetchImpl(`https://api.github.com/repos/${owner}/${repo}${path}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } });
++    } catch { return null; }
++  };
++  const fail = (message: string) => ({ ok: false, message });
++  const noAnswer = fail("GitHub n'a pas répondu. Réessaie");
++
++  const meta = await get('');
++  if (!meta) return noAnswer;
++  if (meta.status === 401) return fail(EXPIRED);
++  if (meta.status === 404) return fail(NOT_FOUND);
++  if (meta.status === 403) return fail(meta.headers.get('x-ratelimit-remaining') === '0' ? 'GitHub limite les requêtes. Réessaie dans quelques minutes' : `GitHub refuse l'accès au dépôt (403). ${CONTENTS}`);
++  if (!meta.ok) return fail(`GitHub a répondu ${meta.status}`);
++
++  const tree = await get('/git/trees/HEAD');
++  if (!tree) return noAnswer;
++  if (tree.status === 403 || tree.status === 404) return fail(`Le jeton voit le dépôt mais pas son contenu (${tree.status}). ${CONTENTS}`);
++  if (tree.status === 409) return fail(EMPTY);
++  if (!tree.ok) return fail(`GitHub a répondu ${tree.status}`);
++  const j = (await tree.json().catch(() => ({}))) as { tree?: { path: string }[] };
++  if (!j.tree?.some((e) => e.path === 'corpus')) return fail("Dépôt lisible, mais il n'y a pas de dossier corpus/ à la racine : est-ce bien le dépôt des fiches ?");
++  return { ok: true, message: 'GitHub : connecté' };
++}
+diff --git a/src/lib/github/repo.ts b/src/lib/github/repo.ts
+index 8f73dae..756741d 100644
+--- a/src/lib/github/repo.ts
++++ b/src/lib/github/repo.ts
+@@ -1,4 +1,4 @@
+-import { AuthError, ConflictError, NetworkError, NotFoundError } from '../errors';
++import { AuthError, ConflictError, NetworkError, NotFoundError, RateLimitError } from '../errors';
+ 
+ export type TreeEntry = { path: string; type: 'blob' | 'tree'; sha: string };
+ 
+@@ -20,7 +20,7 @@ export class GithubRepo {
+   private token: string;
+   private fetchImpl: typeof fetch;
+   constructor(owner: string, name: string, token: string, fetchImpl: typeof fetch = (...a) => fetch(...a)) {
+-    this.owner = owner; this.name = name; this.token = token; this.fetchImpl = fetchImpl;
++    this.owner = owner.trim(); this.name = name.trim(); this.token = token.trim(); this.fetchImpl = fetchImpl;
+   }
+ 
+   private async request(path: string, init: RequestInit = {}, accept = 'application/vnd.github+json'): Promise<Response> {
+@@ -33,7 +33,14 @@ export class GithubRepo {
+     } catch {
+       throw new NetworkError();
+     }
+-    if (r.status === 401 || r.status === 403) throw new AuthError('Jeton refusé ou expiré');
++    if (r.status === 401) throw new AuthError('Jeton refusé ou expiré', 401);
++    if (r.status === 403) {
++      if (r.headers.get('x-ratelimit-remaining') === '0') {
++        const reset = Number(r.headers.get('x-ratelimit-reset'));
++        throw new RateLimitError(Number.isFinite(reset) && reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : 60);
++      }
++      throw new AuthError('Jeton sans la permission nécessaire', 403);
++    }
+     if (r.status === 404) throw new NotFoundError();
+     if (r.status === 409 || r.status === 422) throw new ConflictError();
+     if (!r.ok) throw new NetworkError(`GitHub a répondu ${r.status}`);
+diff --git a/src/lib/jobs/store.ts b/src/lib/jobs/store.ts
+new file mode 100644
+index 0000000..5495ec7
+--- /dev/null
++++ b/src/lib/jobs/store.ts
+@@ -0,0 +1,72 @@
++import type { Problem } from '../types';
++
++/**
++ * Tâches longues (génération d'une fiche, transcription d'un import) : leur état vit ici, hors des composants,
++ * pour que la progression reste visible et exacte quand on change d'onglet. Une tâche par type.
++ */
++export type JobKind = 'generate' | 'cours';
++/** running : en cours ; waiting : pause avant une reprise automatique ; done / error : terminée. */
++export type JobState = 'running' | 'waiting' | 'done' | 'error';
++export type Job = {
++  kind: JobKind; title: string; state: JobState;
++  /** Étape en cours (tour de génération ou lot d'import), à partir de 1 ; 0 avant le début. */
++  step: number; steps: number;
++  /** Phrase d'état du moment : « Tour 2 sur 4 : envoi à Gemini… », « Serveur surchargé, nouvel essai dans 2 s ». */
++  message: string;
++  startedAt: number;
++  /** Début de l'étape ou du message en cours : sert à afficher « depuis 12 s ». */
++  since: number;
++  updatedAt: number;
++  /** Reprise automatique prévue à cette heure (state = waiting). */
++  resumeAt?: number;
++  outcome?: 'ok' | 'warn' | 'error';
++  /** Identifiant de ce que la tâche produit ou traite (brouillon, import). */
++  ref?: string;
++  problems?: Problem[];
++  dismissed?: boolean;
++};
++
++type Snapshot = Partial<Record<JobKind, Job>>;
++let snapshot: Snapshot = {};
++const subs = new Set<() => void>();
++
++function put(kind: JobKind, job: Job | undefined): void {
++  const next = { ...snapshot };
++  if (job) next[kind] = job; else delete next[kind];
++  snapshot = next; // nouvel objet à chaque changement : useSyncExternalStore détecte la mise à jour
++  subs.forEach((f) => f());
++}
++
++export const getJobs = (): Snapshot => snapshot;
++export const getJob = (kind: JobKind): Job | undefined => snapshot[kind];
++export const subscribeJobs = (f: () => void): (() => void) => { subs.add(f); return () => { subs.delete(f); }; };
++export const isRunning = (kind: JobKind): boolean => snapshot[kind]?.state === 'running';
++export const isActive = (kind: JobKind): boolean => { const s = snapshot[kind]?.state; return s === 'running' || s === 'waiting'; };
++export const resetJobs = (): void => put('generate', undefined) ?? put('cours', undefined);
++
++export function startJob(kind: JobKind, o: { title: string; steps: number; message: string; ref?: string }): Job {
++  const t = Date.now();
++  const job: Job = { kind, title: o.title, state: 'running', step: 0, steps: o.steps, message: o.message, startedAt: t, since: t, updatedAt: t, ref: o.ref };
++  put(kind, job);
++  return job;
++}
++
++export function updateJob(kind: JobKind, patch: Partial<Pick<Job, 'step' | 'steps' | 'message' | 'state' | 'resumeAt' | 'ref'>>): void {
++  const cur = snapshot[kind];
++  if (!cur) return;
++  const t = Date.now();
++  const moved = (patch.message !== undefined && patch.message !== cur.message) || (patch.step !== undefined && patch.step !== cur.step);
++  put(kind, { ...cur, ...patch, updatedAt: t, since: moved ? t : cur.since, ...('resumeAt' in patch ? {} : { resumeAt: undefined }) });
++}
++
++export function finishJob(kind: JobKind, o: { state: 'done' | 'error'; outcome: 'ok' | 'warn' | 'error'; message: string; problems?: Problem[]; ref?: string }): void {
++  const cur = snapshot[kind];
++  if (!cur) return;
++  const t = Date.now();
++  put(kind, { ...cur, state: o.state, outcome: o.outcome, message: o.message, problems: o.problems, ref: o.ref ?? cur.ref, updatedAt: t, since: t, resumeAt: undefined, dismissed: false });
++}
++
++export function dismissJob(kind: JobKind): void {
++  const cur = snapshot[kind];
++  if (cur) put(kind, { ...cur, dismissed: true });
++}
+diff --git a/src/lib/render/palette.ts b/src/lib/render/palette.ts
+new file mode 100644
+index 0000000..463a36a
+--- /dev/null
++++ b/src/lib/render/palette.ts
+@@ -0,0 +1,52 @@
++import { contrastRatio } from '../../theme/contrast';
++
++/** Les trois couleurs de la charte des fiches : titres, sous-titres et textes d'alerte, logo. Le fond reste blanc et le texte noir. */
++export type FichePalette = { titre: string; sousTitre: string; logo: string };
++export type FicheCouleurs = { preset: string; custom: FichePalette };
++
++export const PRESETS: { id: string; label: string; palette: FichePalette }[] = [
++  { id: 'sequentia', label: 'Séquentia (rouge)', palette: { titre: '#DD0033', sousTitre: '#B10029', logo: '#CB8593' } },
++  { id: 'ocean', label: 'Océan', palette: { titre: '#0A66C2', sousTitre: '#084A8F', logo: '#7FA8D1' } },
++  { id: 'foret', label: 'Forêt', palette: { titre: '#1F8A4C', sousTitre: '#16663A', logo: '#7DB896' } },
++  { id: 'violet', label: 'Violet', palette: { titre: '#7B3FE4', sousTitre: '#5B2BB0', logo: '#A68BD6' } },
++  { id: 'orange', label: 'Orange', palette: { titre: '#D9480F', sousTitre: '#A63A0B', logo: '#E0A178' } },
++  { id: 'encre', label: 'Encre (noir et gris)', palette: { titre: '#1A1A1A', sousTitre: '#000000', logo: '#8A8A8A' } },
++];
++export const DEFAULT_PALETTE: FichePalette = PRESETS[0].palette;
++export const DEFAULT_COULEURS: FicheCouleurs = { preset: 'sequentia', custom: DEFAULT_PALETTE };
++
++/** « #abc » ou « abcdef » deviennent « #AABBCC » ; null si ce n'est pas une couleur hexadécimale. */
++export function normalizeHex(v: unknown): string | null {
++  const m = typeof v === 'string' ? /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v.trim()) : null;
++  if (!m) return null;
++  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join('') : m[1];
++  return `#${h.toUpperCase()}`;
++}
++
++/** Palette effective d'après le réglage ; toute valeur invalide retombe sur la charte Séquentia. */
++export function resolvePalette(c?: Partial<FicheCouleurs>): FichePalette {
++  const preset = PRESETS.find((p) => p.id === c?.preset);
++  if (preset) return preset.palette;
++  if (c?.preset === 'perso') {
++    const x = c.custom as Partial<FichePalette> | undefined;
++    return { titre: normalizeHex(x?.titre) ?? DEFAULT_PALETTE.titre, sousTitre: normalizeHex(x?.sousTitre) ?? DEFAULT_PALETTE.sousTitre, logo: normalizeHex(x?.logo) ?? DEFAULT_PALETTE.logo };
++  }
++  return DEFAULT_PALETTE;
++}
++
++/** Pose les couleurs sur la racine d'une fiche ; elles descendent sur toutes les pages (aperçu, impression, export PNG et PDF). */
++export function applyPalette(root: HTMLElement, p: FichePalette): void {
++  root.style.setProperty('--f-rouge', p.titre);
++  root.style.setProperty('--f-rouge-fonce', p.sousTitre);
++  root.style.setProperty('--f-rose', p.logo);
++}
++
++/** Avertit quand les titres seraient peu lisibles sur le fond blanc (3:1 pour du grand texte). */
++export function paletteWarnings(p: FichePalette): string[] {
++  const out: string[] = [];
++  for (const [nom, hex] of [['Les titres', p.titre], ['Les sous-titres et les pièges', p.sousTitre]] as const) {
++    const r = contrastRatio(hex, '#FFFFFF');
++    if (r < 3) out.push(`${nom} seraient peu lisibles sur fond blanc (contraste ${r.toFixed(1).replace('.', ',')}, 3 minimum). Choisis une couleur plus foncée.`);
++  }
++  return out;
++}
+diff --git a/src/lib/render/renderFiche.ts b/src/lib/render/renderFiche.ts
+index 474f724..aa4a0ca 100644
+--- a/src/lib/render/renderFiche.ts
++++ b/src/lib/render/renderFiche.ts
+@@ -2,6 +2,7 @@ import type { Block, Fiche } from '../types';
+ import { FORMATS } from './formats';
+ import { renderRich } from './rich';
+ import { sanitizeSvg } from './sanitizeSvg';
++import { DEFAULT_PALETTE, applyPalette, type FichePalette } from './palette';
+ 
+ const MATIERES: Record<string, string> = {
+   maths: 'Mathématiques', physique: 'Physique', chimie: 'Chimie', si: "Sciences de l'ingénieur",
+@@ -12,7 +13,7 @@ const NIVEAUX: Record<string, string> = { terminale: 'Terminale', mpsi: 'MPSI' }
+ const str = (b: Block, k: string): string => (typeof b[k] === 'string' ? (b[k] as string) : '');
+ const arr = (b: Block, k: string): string[] => (Array.isArray(b[k]) ? (b[k] as string[]) : []);
+ 
+-export function renderFiche(root: HTMLElement, fiche: Fiche): { katexErrors: string[] } {
++export function renderFiche(root: HTMLElement, fiche: Fiche, palette: FichePalette = DEFAULT_PALETTE): { katexErrors: string[] } {
+   const errors: string[] = [];
+   const el = (tag: string, cls?: string, text?: string): HTMLElement => {
+     const e = document.createElement(tag);
+@@ -68,6 +69,7 @@ export function renderFiche(root: HTMLElement, fiche: Fiche): { katexErrors: str
+ 
+   root.innerHTML = '';
+   root.setAttribute('data-fiche', '');
++  applyPalette(root, palette);
+   const fmt = FORMATS[fiche.meta.format ?? 'fiche'];
+   const n = fiche.pages.length;
+   fiche.pages.forEach((p, i) => {
+diff --git a/src/lib/storage/settings.ts b/src/lib/storage/settings.ts
+index de373d3..6a750ab 100644
+--- a/src/lib/storage/settings.ts
++++ b/src/lib/storage/settings.ts
+@@ -1,10 +1,13 @@
+ import type { Mode, ThemeId, Tokens } from '../../theme/themes';
++import { DEFAULT_COULEURS, type FicheCouleurs } from '../render/palette';
+ 
+ export type Settings = {
+-  geminiKey: string; githubToken: string; owner: string; repo: string; model: string; modelSecours: string;
++  geminiKey: string; githubToken: string; owner: string; repo: string; model: string; modelSecours: string; modeleActif: 'principal' | 'secours';
+   maxPerMinute: number; maxPerDay: number; lotPages: number;
+   theme: ThemeId; mode: Mode;
+   themeOverrides: { light?: Partial<Tokens>; dark?: Partial<Tokens> };
++  /** Couleurs des fiches (titres, sous-titres, logo), valables pour toutes les fiches sur cet appareil. */
++  ficheCouleurs: FicheCouleurs;
+ };
+ 
+ const KEY = 'sequentia.settings';
+@@ -12,8 +15,9 @@ const defaults = (): Settings => ({
+   geminiKey: '', githubToken: '', owner: '', repo: '',
+   model: 'gemini-3.8-flash', // MODEL par défaut de Fiches/orchestrate.py
+   modelSecours: '', // essayé quand le modèle principal reste surchargé (vide : pas de secours)
++  modeleActif: 'principal', // lequel des deux passe en premier ; l'autre sert de repli
+   maxPerMinute: 5, maxPerDay: 100, lotPages: 5,
+-  theme: 'd', mode: 'auto', themeOverrides: {},
++  theme: 'd', mode: 'auto', themeOverrides: {}, ficheCouleurs: DEFAULT_COULEURS,
+ });
+ 
+ let memory: string | null = null; // repli si localStorage est indisponible
+diff --git a/src/theme/design.css b/src/theme/design.css
+index 57630cc..3577cac 100644
+--- a/src/theme/design.css
++++ b/src/theme/design.css
+@@ -193,3 +193,42 @@ legend { padding: 0 8px; font-size: 13px; font-weight: 600; color: var(--muted);
+ 
+ @media (prefers-reduced-motion: reduce) { .screen { animation: none; } .stepper span[data-s="now"] { animation: none; } }
+ @media print { .actionbar, .topbar { display: none !important; } }
++
++/* ───────── Tâches longues : progression vivante, bandeau, bascule de modèle, blocs de la bibliothèque ───────── */
++.liveprog { display: grid; gap: 6px; }
++.liveprog-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
++.liveprog-head b { color: var(--text); font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
++.liveprog-time { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
++.liveprog .stepper { max-width: 280px; margin-top: 2px; }
++.indeterminate { position: relative; height: 3px; border-radius: 2px; overflow: hidden; background: var(--tint-hover); max-width: 280px; }
++.indeterminate i { position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: inherit; background: var(--accent); animation: slide 1.4s ease-in-out infinite; }
++@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(270%); } }
++.jobbar { display: grid; gap: 10px; margin: 12px 0 0; }
++.jobbar .jobcard { margin: 0; padding: 14px 18px; }
++.jobbar .jobhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
++.jobbar .jobhead b { overflow-wrap: anywhere; }
++.jobbar .jobacts { display: inline-flex; gap: 8px; }
++.jobbar .notice { margin: 0; }
++.nav .live { width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); display: inline-block; animation: pulse 1.2s ease-in-out infinite; }
++.modelrow { margin: 4px 0 4px; }
++.modelswitch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0 0; }
++.modelswitch[data-compact] { margin: 0; }
++.modelswitch .ms-label { font-size: 13px; color: var(--muted); }
++.ms-group { display: inline-flex; padding: 3px; gap: 3px; border-radius: var(--r-pill); background: var(--tint); }
++.ms-group button { --b: transparent; --f: var(--text); display: grid; gap: 0; justify-items: start; min-height: 0; height: auto; padding: 6px 16px; border-radius: var(--r-pill); text-align: left; }
++.ms-group button b { font-size: 14px; font-weight: 600; }
++.ms-group button small { font-size: 12px; color: var(--muted); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++.ms-group button[aria-checked="true"] { --b: var(--card); box-shadow: var(--shadow-sm); }
++.ms-group button:disabled { opacity: .55; }
++.blockpicker .blockpage { border: 0; margin: 0 0 10px; padding: 0; }
++.blockpicker legend { font-size: 14px; font-weight: 600; padding: 0; margin-bottom: 4px; }
++.check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 15px; }
++.check input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
++@media (prefers-reduced-motion: reduce) { .indeterminate i, .nav .live { animation: none; } .indeterminate i { width: 100%; opacity: .35; } }
++
++/* Aperçu des couleurs de fiche dans Réglages : fond blanc fixe, comme sur la fiche imprimée. */
++.palette-preview { display: grid; gap: 2px; justify-items: center; margin-top: 16px; padding: 16px; border-radius: 16px; background: #FFFFFF; color: #000000; border: 1px solid var(--hair); text-align: center; }
++.palette-preview .pp-logo { align-self: start; justify-self: start; font-style: italic; font-size: 18px; color: var(--f-rose); }
++.palette-preview .pp-titre { font-size: 28px; font-weight: 700; color: var(--f-rouge); }
++.palette-preview .pp-sous { font-size: 15px; color: var(--f-rouge-fonce); }
++.palette-preview .pp-piege { margin-top: 6px; font-size: 14px; font-weight: 600; color: var(--f-rouge-fonce); }
+diff --git a/src/ui/BlockPicker.tsx b/src/ui/BlockPicker.tsx
+new file mode 100644
+index 0000000..07d58dc
+--- /dev/null
++++ b/src/ui/BlockPicker.tsx
+@@ -0,0 +1,39 @@
++import { useEffect, useState } from 'react';
++import { blockLabel, refFromFiche, type Ref } from '../lib/generate/refs';
++import type { Fiche } from '../lib/types';
++
++/** Liste les blocs d'une fiche de la bibliothèque : on coche ceux à envoyer vers Générer, ou on envoie la fiche entière. */
++export default function BlockPicker({ fiche, path, onSend }: { fiche: Fiche; path: string; onSend: (ref: Ref) => void }) {
++  const [picked, setPicked] = useState<Set<string>>(new Set());
++  useEffect(() => setPicked(new Set()), [path]);
++  const key = (p: number, i: number) => `${p}.${i}`;
++  const all = fiche.pages.flatMap((pg, p) => pg.blocks.map((_, i) => key(p, i)));
++  const toggle = (k: string) => setPicked((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
++  return (
++    <details className="adv blockpicker">
++      <summary>Choisir des blocs pour Générer ({all.length})</summary>
++      <p className="muted" style={{ margin: '0 0 8px' }}>Coche les blocs à réutiliser : ils s’ajoutent aux références de l’écran Générer.</p>
++      {fiche.pages.map((pg, p) => (
++        <fieldset key={p} className="blockpage">
++          <legend>Page {p + 1}{pg.titre_page ? ` · ${pg.titre_page}` : ''}</legend>
++          <ul className="lots">
++            {pg.blocks.map((b, i) => (
++              <li key={i}>
++                <label className="check">
++                  <input type="checkbox" checked={picked.has(key(p, i))} onChange={() => toggle(key(p, i))} />
++                  <span>{blockLabel(b)}</span>
++                </label>
++              </li>
++            ))}
++          </ul>
++        </fieldset>
++      ))}
++      <div className="toolbar" style={{ marginBottom: 0 }}>
++        <button className="btn" disabled={picked.size === 0} onClick={() => onSend(refFromFiche(fiche, path, (p, i) => picked.has(key(p, i))))}>Envoyer la sélection ({picked.size})</button>
++        <button className="btn ghost" onClick={() => onSend(refFromFiche(fiche, path))}>Envoyer toute la fiche ({all.length})</button>
++        <span className="sp" />
++        <button onClick={() => setPicked(new Set(picked.size === all.length ? [] : all))}>{picked.size === all.length ? 'Tout décocher' : 'Tout cocher'}</button>
++      </div>
++    </details>
++  );
++}
+diff --git a/src/ui/Cours.tsx b/src/ui/Cours.tsx
+index 20cd6bd..14c05aa 100644
+--- a/src/ui/Cours.tsx
++++ b/src/ui/Cours.tsx
+@@ -6,11 +6,9 @@ import { checkMarkdown, type CoursMeta } from '../lib/cours/checks';
+ import { renderMarkdownPreview } from '../lib/cours/preview';
+ import { ImportQueue, type LotInfo } from '../lib/cours/queue';
+ import { saveCours } from '../lib/cours/save';
+-import { transcribeLot, transcribeRobust } from '../lib/cours/transcribe';
+ import { verifyLot } from '../lib/cours/verify';
+-import { ConflictError, NetworkError, RateLimitError } from '../lib/errors';
++import { ConflictError } from '../lib/errors';
+ import { RequestBudget } from '../lib/gemini/budget';
+-import { modelsOf, type RobustCfg } from '../lib/gemini/robust';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { slugify } from '../lib/slug';
+ import type { Db } from '../lib/storage/db';
+@@ -18,7 +16,12 @@ import { getSettings } from '../lib/storage/settings';
+ import type { Problem } from '../lib/types';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
++import { dismissJob } from '../lib/jobs/store';
++import LiveProgress from './LiveProgress';
+ import { messageFor } from './messages';
++import ModelSwitch from './ModelSwitch';
++import { cancelAuto, rerunCoursLot, resumeNow, startCoursRun } from './runCours';
++import { useJob } from './useJobs';
+ import { Empty, Notice, Quota, Section } from './kit';
+ import { AttemptLog, SegmentBar, StatusBadge, describeLot } from './status';
+ 
+@@ -52,10 +55,11 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+   const canvas = useRef<HTMLCanvasElement>(null);
+   const preview = useRef<HTMLDivElement>(null);
+   const [imgUrl, setImgUrl] = useState('');
+-  const [live, setLive] = useState('');
+-  const [runningId, setRunningId] = useState<string | null>(null);
+-  const auto = useRef<{ n: number; timer?: number }>({ n: 0 });
+-  useEffect(() => () => window.clearTimeout(auto.current.timer), []);
++  // La transcription vit hors de ce composant : elle continue quand on change d'onglet, et son état est relu ici au retour.
++  const job = useJob('cours');
++  const jobBusy = job?.state === 'running';
++  const runningId = jobBusy ? (job?.ref ?? null) : null;
++  const finished = job && (job.state === 'done' || job.state === 'error') && !job.dismissed ? job : null;
+ 
+   const queue = useCallback((t?: (l: Lot) => Promise<string>) => new ImportQueue(db as Db, t ?? (async () => ''), (lot, md) => verifyLot(lot, md)), [db]);
+ 
+@@ -69,7 +73,8 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
+     setUsed(`${u.day}/${u.limit}`);
+   }, [db, queue]);
+-  useEffect(() => { void refresh(); }, [refresh]);
++  // Les lots changent à chaque étape : on relit la liste quand la tâche avance ou change d'état (pas à chaque message).
++  useEffect(() => { void refresh(); }, [refresh, job?.step, job?.state]);
+ 
+   const onFiles = async (files: FileList | null) => {
+     if (!files?.length || !db) return;
+@@ -102,49 +107,18 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+     } catch { setMsg("Impossible de lire ce fichier. Vérifie que c'est un PDF, une image ou un fichier texte"); } finally { setBusy(false); }
+   };
+ 
+-  /** File d'import branchée sur Gemini : reprises, modèle de secours, plafonds locaux, contrôle de chaque lot. */
+-  const buildQueue = (onErr: (e: unknown) => void) => {
+-    const s = getSettings();
+-    const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
+-    const cfg: RobustCfg = { key: s.geminiKey, models: modelsOf(s), budget, onEvent: (e) => setLive(e.message) };
+-    return queue(async (lot) => {
+-      try { return await transcribeLot(lot, { llm: (l) => transcribeRobust({ cfg, lot: l }) }); }
+-      catch (e) { onErr(e); throw e; }
+-    });
+-  };
+-
+-  const run = async (id: string) => {
++  const run = async (id: string, title: string) => {
+     if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+-    window.clearTimeout(auto.current.timer);
+-    let last: unknown;
+-    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
+-    try {
+-      const r = await buildQueue((e) => { last = e; }).run(id);
+-      if (r === 'done') {
+-        auto.current.n = 0;
+-        setMsg('Transcription terminée. Relis les lots marqués « À contrôler »');
+-      } else {
+-        const retryable = last instanceof NetworkError || (last instanceof RateLimitError && last.retryAfterSec <= 120);
+-        if (retryable && auto.current.n < 3 && navigator.onLine !== false) {
+-          auto.current.n += 1;
+-          const delay = last instanceof RateLimitError ? last.retryAfterSec + 1 : 30;
+-          setMsg(`${messageFor(last)}. Nouvel essai automatique dans ${delay} s (${auto.current.n}/3). La progression est gardée`);
+-          auto.current.timer = window.setTimeout(() => void run(id), delay * 1000);
+-        } else {
+-          setMsg(last ? `${messageFor(last)}. La progression est gardée` : 'En pause. La progression est gardée');
+-        }
+-      }
+-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
++    if (!db) return;
++    setMsg('');
++    void startCoursRun(db, id, title);
+   };
+ 
+-  const rerunLot = async (id: string, i: number) => {
++  const rerunLot = async (id: string, i: number, title: string) => {
+     if (!getSettings().geminiKey) { setMsg('Ajoute ta clé Gemini dans Réglages'); return; }
+-    window.clearTimeout(auto.current.timer);
+-    setBusy(true); setMsg(''); setLive(''); setRunningId(id);
+-    try {
+-      const st = await buildQueue(() => undefined).rerun(id, i);
+-      setMsg(st.state === 'ok' ? `Lot ${i + 1} relu et vérifié` : `Lot ${i + 1} retranscrit, mais il reste à contrôler`);
+-    } catch (e) { setMsg(messageFor(e)); } finally { setBusy(false); setLive(''); setRunningId(null); await refresh(); }
++    if (!db) return;
++    setMsg('');
++    void rerunCoursLot(db, id, i, title);
+   };
+ 
+   const openReview = async (id: string) => {
+@@ -255,14 +229,20 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+           <div className="toolbar" style={{ marginBottom: 0 }}>
+             <button className="btn" disabled={!pasted.trim()} onClick={() => { setView({ id: null, meta: { ...meta, chapitre: meta.chapitre || 'Cours collé', source: 'texte collé' }, md: pasted }); setLots([]); }}>Utiliser ce texte</button>
+             <span className="sp" />
++            <ModelSwitch compact />
+             <Quota used={used} />
+           </div>
+         </Section>
+       </div>
+       {msg && <Notice kind={/impossible|refus|échec|erreur/i.test(msg) ? 'error' : 'info'}>{msg}</Notice>}
++      {!msg && finished && (
++        <Notice kind={finished.outcome === 'ok' ? 'ok' : 'error'} action={<button onClick={() => dismissJob('cours')}>Fermer</button>}>{finished.message}</Notice>
++      )}
+       <h2 className="h2">Imports en cours <small>{rows.length > 0 ? `${rows.length}` : ''}</small></h2>
+       {rows.length === 0 && <Empty title="Aucun import">Dépose un PDF ou des photos ci-dessus : la progression de chaque lot s’affichera ici.</Empty>}
+-      {live && <p role="status" aria-live="polite" className="muted">{live}</p>}
++      {job && (job.state === 'running' || job.state === 'waiting') && (
++        <div className="card"><LiveProgress job={job} onResume={resumeNow} onCancel={cancelAuto} /></div>
++      )}
+       <ul className="rows">
+       {rows.map((r) => {
+         const bad = r.lots.filter((l) => l.state === 'suspect' || l.state === 'failed').length;
+@@ -276,7 +256,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+                 <small>{r.meta?.source} · {r.done} sur {r.total} lots</small>
+               </div>
+               <div className="acts">
+-                <button className="btn" disabled={busy || r.done >= r.total} onClick={() => { auto.current.n = 0; void run(r.id); }}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
++                <button className="btn" disabled={busy || jobBusy || r.done >= r.total} onClick={() => void run(r.id, r.meta?.chapitre ?? r.id)}>{r.done === 0 ? 'Lancer' : 'Reprendre'}</button>
+                 <button disabled={r.done === 0} onClick={() => void openReview(r.id)}>Relire</button>
+                 <button onClick={async () => { await queue().remove(r.id); await refresh(); }}>Supprimer</button>
+               </div>
+@@ -290,7 +270,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+                     <StatusBadge state={stateOf(l, i)} />
+                     <span>Lot {i + 1} (p. {l.fromPage}-{l.toPage})</span>
+                     <span className="note">{describeLot(l)}</span>
+-                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy} onClick={() => void rerunLot(r.id, i)}>Relancer ce lot</button>}
++                    {(l.state === 'suspect' || l.state === 'failed') && <button className="btn ghost" style={{ minHeight: 36, padding: '0 16px', fontSize: 14 }} disabled={busy || jobBusy} onClick={() => void rerunLot(r.id, i, r.meta?.chapitre ?? r.id)}>Relancer ce lot</button>}
+                   </li>
+                 ))}
+               </ul>
+@@ -299,7 +279,7 @@ export default function Cours({ repo, db }: { repo: GithubRepo | null; db: Db |
+         );
+       })}
+       </ul>
+-      <AttemptLog refreshKey={`${msg}|${rows.length}|${runningId}`} />
++      <AttemptLog refreshKey={`${msg}|${rows.length}|${job?.state}|${job?.step}`} />
+     </div>
+   );
+ }
+diff --git a/src/ui/FichePaletteSettings.tsx b/src/ui/FichePaletteSettings.tsx
+new file mode 100644
+index 0000000..1ce16b7
+--- /dev/null
++++ b/src/ui/FichePaletteSettings.tsx
+@@ -0,0 +1,58 @@
++import { useState } from 'react';
++import { DEFAULT_COULEURS, PRESETS, paletteWarnings, resolvePalette, type FichePalette } from '../lib/render/palette';
++import { getSettings, saveSettings } from '../lib/storage/settings';
++import { Notice, Section } from './kit';
++
++const CHAMPS: { key: keyof FichePalette; label: string }[] = [
++  { key: 'titre', label: 'Titres' },
++  { key: 'sousTitre', label: 'Sous-titres et pièges' },
++  { key: 'logo', label: 'Logo' },
++];
++const bande = (p: FichePalette) => `linear-gradient(90deg, ${p.titre} 0 34%, ${p.sousTitre} 34% 67%, ${p.logo} 67% 100%)`;
++
++export default function FichePaletteSettings() {
++  const [c, setC] = useState(() => getSettings().ficheCouleurs);
++  const update = (next: typeof c) => {
++    saveSettings({ ficheCouleurs: next });
++    setC(next);
++    window.dispatchEvent(new Event('sequentia-settings-changed'));
++  };
++  const palette = resolvePalette(c);
++  const warnings = paletteWarnings(palette);
++  return (
++    <div className="card">
++      <Section title="Couleurs des fiches" hint="Elles s’appliquent à l’aperçu, à l’impression et aux exports PDF et PNG de toutes tes fiches, sur cet appareil. Le fond reste blanc et le texte noir.">
++        <div className="swatches" role="group" aria-label="Palette des fiches">
++          {PRESETS.map((p) => (
++            <button key={p.id} className="swatch" aria-pressed={c.preset === p.id} onClick={() => update({ ...c, preset: p.id })}>
++              <i style={{ background: bande(p.palette) }} />{p.label}
++            </button>
++          ))}
++          <button className="swatch" aria-pressed={c.preset === 'perso'} onClick={() => update({ ...c, preset: 'perso' })}>
++            <i style={{ background: bande(resolvePalette({ preset: 'perso', custom: c.custom })) }} />Personnalisé
++          </button>
++        </div>
++        {c.preset === 'perso' && (
++          <div className="colors" style={{ marginTop: 16 }}>
++            {CHAMPS.map((f) => (
++              <label key={f.key}>
++                {f.label}
++                <input type="color" value={palette[f.key]} onChange={(e) => update({ preset: 'perso', custom: { ...palette, [f.key]: e.target.value.toUpperCase() } })} />
++              </label>
++            ))}
++          </div>
++        )}
++        <div className="palette-preview" aria-hidden="true" style={{ ['--f-rouge' as string]: palette.titre, ['--f-rouge-fonce' as string]: palette.sousTitre, ['--f-rose' as string]: palette.logo }}>
++          <span className="pp-logo">sequentia</span>
++          <span className="pp-titre">Théorème de Rolle</span>
++          <span className="pp-sous">Énoncé et conséquences</span>
++          <span className="pp-piege">Piège : oublier l’hypothèse de dérivabilité.</span>
++        </div>
++        {warnings.map((w) => <Notice key={w} kind="error">{w}</Notice>)}
++        <div className="toolbar" style={{ marginTop: 16, marginBottom: 0 }}>
++          <button onClick={() => update(DEFAULT_COULEURS)}>Revenir à la charte Séquentia</button>
++        </div>
++      </Section>
++    </div>
++  );
++}
+diff --git a/src/ui/Generate.tsx b/src/ui/Generate.tsx
+index ac1eb3c..ee45154 100644
+--- a/src/ui/Generate.tsx
++++ b/src/ui/Generate.tsx
+@@ -1,23 +1,28 @@
+-import { useCallback, useEffect, useState } from 'react';
++import { useCallback, useEffect, useRef, useState } from 'react';
+ import { RequestBudget } from '../lib/gemini/budget';
+-import { buildPrompt } from '../lib/generate/context';
+-import { generateFiche } from '../lib/generate/loop';
+-import { loadSources } from '../lib/generate/sources';
++import { blockLabel, countBlocks, mergeRef, refFromJson, removeBlock, removeRef, type RefMode, type RefSet } from '../lib/generate/refs';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { AuthError } from '../lib/errors';
+-import schema from '../lib/schema/schema.json';
++import { dismissJob, isRunning } from '../lib/jobs/store';
+ import { slugify } from '../lib/slug';
+ import { exportDraft, type Db, type Draft } from '../lib/storage/db';
+ import { getSettings } from '../lib/storage/settings';
+-import type { Brief, Fiche, Problem } from '../lib/types';
+-import { makeGenerateDeps } from './geminiDeps';
++import type { Brief } from '../lib/types';
+ import { AttemptLog } from './status';
+ import { TextArea, SelectField, TextField } from './Field';
+ import { FxButton } from './fx';
++import LiveProgress from './LiveProgress';
+ import { messageFor } from './messages';
+-import { Empty, Notice, Quota, Section, Stepper } from './kit';
++import ModelSwitch from './ModelSwitch';
++import { runGenerate } from './runGenerate';
++import { useJob } from './useJobs';
++import { Empty, Notice, Quota, Section } from './kit';
+ 
+-type Props = { repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void };
++type Props = {
++  repo: GithubRepo | null; db: Db | null; initialBrief?: Brief | null; onOpenDraft: (d: Draft) => void;
++  /** Blocs de la bibliothèque mis de côté pour cette génération (gérés par l'App : la Bibliothèque peut en ajouter). */
++  refs: RefSet; onRefsChange: (r: RefSet) => void; onGoLibrary: () => void;
++};
+ 
+ const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+ const EMPTY = { matiere: 'maths', niveau: 'mpsi', chapitre: '', sujet: '', format: 'fiche', contenu: '', pieges: '', exemples: '', nbQcm: 2, exclure: '', consignes: '' };
+@@ -42,15 +47,20 @@ export function downloadText(name: string, text: string): void {
+   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+ }
+ 
+-export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props) {
++export default function Generate({ repo, db, initialBrief, onOpenDraft, refs, onRefsChange, onGoLibrary }: Props) {
+   const [f, setF] = useState<Form>(EMPTY);
+-  const [busy, setBusy] = useState(false);
+-  const [tour, setTour] = useState(0);
+   const [msg, setMsg] = useState('');
+-  const [problems, setProblems] = useState<Problem[]>([]);
+   const [drafts, setDrafts] = useState<Draft[]>([]);
+   const [used, setUsed] = useState('');
+-  const [live, setLive] = useState('');
++  const [pasteJson, setPasteJson] = useState('');
++  const refsEl = useRef<HTMLDivElement>(null);
++  const prevCount = useRef(countBlocks(refs));
++
++  // La génération vit hors de ce composant : changer d'onglet ne l'interrompt pas, et son état est relu ici au retour.
++  const job = useJob('generate');
++  const busy = job?.state === 'running';
++  const finished = job && (job.state === 'done' || job.state === 'error') && !job.dismissed ? job : null;
++  const problems = finished?.problems ?? [];
+ 
+   const refresh = useCallback(async () => {
+     if (db) setDrafts(await db.listDrafts());
+@@ -58,15 +68,40 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+     const u = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget').used();
+     setUsed(`${u.day}/${u.limit}`);
+   }, [db]);
+-  useEffect(() => { void refresh(); }, [refresh]);
++  useEffect(() => { void refresh(); }, [refresh, job?.state]);
+   useEffect(() => { if (initialBrief) setF(fromBrief(initialBrief)); }, [initialBrief]);
++  useEffect(() => {
++    const n = countBlocks(refs);
++    if (n > prevCount.current) refsEl.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
++    prevCount.current = n;
++  }, [refs]);
+ 
+   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
+ 
+-  const importBrief = async (file: File | undefined) => {
++  /** Un fichier .json : un brief remplit le formulaire ; une fiche ou une liste de blocs devient une référence. */
++  const importJson = async (file: File | undefined) => {
+     if (!file) return;
+-    try { setF(fromBrief(JSON.parse(await file.text()) as Brief)); setMsg(''); }
+-    catch { setMsg("Ce fichier n'est pas un brief JSON valide"); }
++    let text = '';
++    try { text = await file.text(); JSON.parse(text); } catch { setMsg("Ce fichier n'est pas un JSON valide"); return; }
++    const data = JSON.parse(text) as unknown;
++    if (Array.isArray(data) || (typeof data === 'object' && data !== null && 'pages' in data)) {
++      try {
++        const ref = refFromJson(text, file.name.replace(/\.json$/i, ''));
++        onRefsChange(mergeRef(refs, ref));
++        setMsg(`${ref.blocks.length} bloc${ref.blocks.length > 1 ? 's' : ''} ajouté${ref.blocks.length > 1 ? 's' : ''} aux références`);
++      } catch (e) { setMsg((e as Error).message); }
++      return;
++    }
++    setF(fromBrief(data as Brief)); setMsg('');
++  };
++
++  const addPasted = () => {
++    try {
++      const ref = refFromJson(pasteJson);
++      onRefsChange(mergeRef(refs, ref));
++      setPasteJson('');
++      setMsg(`${ref.blocks.length} bloc${ref.blocks.length > 1 ? 's' : ''} ajouté${ref.blocks.length > 1 ? 's' : ''} aux références`);
++    } catch (e) { setMsg((e as Error).message); }
+   };
+ 
+   const run = async () => {
+@@ -74,41 +109,24 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+     if (!s.geminiKey) { setMsg(messageFor(new AuthError())); return; }
+     if (!repo || !db) { setMsg('Ajoute ton jeton GitHub, le propriétaire et le nom du dépôt dans Réglages'); return; }
+     if (!f.sujet.trim() || !f.chapitre.trim()) { setMsg('Renseigne au moins le chapitre et le sujet'); return; }
+-    setBusy(true); setMsg(''); setProblems([]); setTour(0);
+-    try {
+-      await document.fonts?.ready;
+-      const brief = toBrief(f);
+-      let src;
+-      try { src = await loadSources(repo, db, brief); }
+-      catch (e) { setMsg(messageFor(e, { source: 'github' })); return; }
+-      const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief });
+-      const result = await generateFiche(brief, prompt, makeGenerateDeps(s, prompt.system, setTour, (e) => setLive(e.message)));
+-      const fiche: Fiche | null = result.fiche
+-        ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
+-        : null;
+-      const draft: Draft = { id: brief.id, fiche, raw: result.last, brief, problems: result.problems, updatedAt: Date.now() };
+-      await db.putDraft(draft);
+-      setProblems(result.problems);
+-      if (result.error) setMsg(messageFor(result.error));
+-      else if (!result.ok) setMsg("La fiche n'a pas passé tous les contrôles. Le dernier essai est gardé dans les brouillons");
+-      else setMsg(`Brouillon prêt après ${result.tours} tour${result.tours > 1 ? 's' : ''}`);
+-      await refresh();
+-    } catch (e) {
+-      setMsg(messageFor(e));
+-    } finally { setBusy(false); setLive(''); }
++    if (isRunning('generate')) { setMsg('Une génération est déjà en cours'); return; }
++    setMsg('');
++    void runGenerate({ repo, db, brief: toBrief(f), refs });
+   };
+ 
+   const MATIERES = ['maths', 'physique', 'chimie', 'si', 'philosophie', 'histoire'];
+   const pret = f.sujet.trim() && f.chapitre.trim();
+-  const ok = msg.startsWith('Brouillon prêt');
++  const nRefs = countBlocks(refs);
++  const notice = msg || finished?.message || '';
++  const noticeKind = msg ? (/aux références/.test(msg) ? 'ok' as const : 'info' as const) : finished?.outcome === 'ok' ? 'ok' as const : 'error' as const;
+ 
+   return (
+     <div>
+       <div className="card">
+         <label className="drop">
+           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" /></svg>
+-          <div><b>Reprendre un brief existant</b><span>Choisis un fichier .json pour remplir le formulaire</span></div>
+-          <input type="file" accept="application/json,.json" onChange={(e) => void importBrief(e.target.files?.[0])} />
++          <div><b>Reprendre un brief ou une fiche</b><span>Un brief .json remplit le formulaire ; une fiche ou des blocs deviennent des références</span></div>
++          <input type="file" accept="application/json,.json" onChange={(e) => { void importJson(e.target.files?.[0]); e.target.value = ''; }} />
+         </label>
+ 
+         <Section title="Le sujet" hint="Ces deux champs sont obligatoires.">
+@@ -132,6 +150,49 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+           <TextField label="Nombre de QCM" type="number" min={0} inputMode="numeric" fieldStyle={{ maxWidth: 260 }} value={f.nbQcm} onChange={(e) => set('nbQcm', Math.max(0, Number(e.target.value) || 0))} />
+         </Section>
+ 
++        <div ref={refsEl}>
++          <Section title="Références de la bibliothèque" hint="Des blocs de fiches existantes que Gemini doit reprendre ou imiter. Choisis-les dans la Bibliothèque, dépose un .json ou colle du JSON.">
++            {refs.items.length === 0 && <p className="muted" style={{ margin: '0 0 12px' }}>Aucune référence pour l’instant.</p>}
++            {refs.items.length > 0 && (
++              <ul className="rows" style={{ marginBottom: 12 }}>
++                {refs.items.map((r) => (
++                  <li key={r.id} className="rowcard">
++                    <div className="what"><b>{r.titre}</b><small>{r.blocks.length} bloc{r.blocks.length > 1 ? 's' : ''}{r.matiere ? ` · ${r.matiere}` : ''}</small></div>
++                    <div className="acts"><button onClick={() => onRefsChange(removeRef(refs, r.id))}>Retirer</button></div>
++                    <details className="adv" style={{ flexBasis: '100%', marginTop: 0, paddingTop: 8 }}>
++                      <summary>Voir les blocs</summary>
++                      <ul className="lots">
++                        {r.blocks.map((b) => (
++                          <li key={`${b.page}.${b.index}`}>
++                            <span>{blockLabel(b.block)}</span>
++                            <span className="note">page {b.page + 1}</span>
++                            <button className="btn ghost" style={{ minHeight: 32, padding: '0 14px', fontSize: 14 }} aria-label={`Retirer ${blockLabel(b.block)}`} onClick={() => onRefsChange(removeBlock(refs, r.id, b.page, b.index))}>Retirer</button>
++                          </li>
++                        ))}
++                      </ul>
++                    </details>
++                  </li>
++                ))}
++              </ul>
++            )}
++            {nRefs > 0 && (
++              <SelectField label="Comment les utiliser ?" value={refs.mode} onChange={(e) => onRefsChange({ ...refs, mode: e.target.value as RefMode })}>
++                <option value="inspire">S’en inspirer (structure et style)</option>
++                <option value="reprendre">Les reprendre dans la fiche</option>
++              </SelectField>
++            )}
++            <div className="toolbar" style={{ marginBottom: 0 }}>
++              <button className="btn ghost" onClick={onGoLibrary}>Choisir dans la bibliothèque</button>
++              {nRefs > 0 && <button onClick={() => onRefsChange({ ...refs, items: [] })}>Tout retirer</button>}
++            </div>
++            <details className="adv">
++              <summary>Coller du JSON (fiche, bloc ou liste de blocs)</summary>
++              <TextArea label="JSON" rows={4} value={pasteJson} onChange={(e) => setPasteJson(e.target.value)} />
++              <button className="btn" disabled={!pasteJson.trim()} onClick={addPasted}>Ajouter aux références</button>
++            </details>
++          </Section>
++        </div>
++
+         <details className="adv" open={!!(f.exclure || f.consignes)}>
+           <summary>Options avancées</summary>
+           <TextArea label="À exclure" rows={2} hint="Notions à ne pas aborder, une par ligne." value={f.exclure} onChange={(e) => set('exclure', e.target.value)} />
+@@ -139,7 +200,9 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+         </details>
+       </div>
+ 
+-      {msg && !busy && <Notice kind={ok ? 'ok' : problems.length || msg.startsWith('La fiche') ? 'error' : 'info'}>{msg}</Notice>}
++      {notice && !busy && (
++        <Notice kind={noticeKind} action={!msg && finished ? <button onClick={() => dismissJob('generate')}>Fermer</button> : undefined}>{notice}</Notice>
++      )}
+       {problems.length > 0 && !busy && (
+         <details className="adv" style={{ marginTop: -8, marginBottom: 20 }}>
+           <summary>{problems.length} point{problems.length > 1 ? 's' : ''} à corriger dans la fiche</summary>
+@@ -147,20 +210,16 @@ export default function Generate({ repo, db, initialBrief, onOpenDraft }: Props)
+         </details>
+       )}
+ 
++      <div className="modelrow"><ModelSwitch compact /></div>
+       <div className="actionbar">
+-        <div className="grow" role="status" aria-live="polite">
+-          {busy ? (
+-            <>
+-              <b>{live || `Tour ${Math.max(tour, 1)} sur 4`}</b>
+-              <Stepper current={Math.max(tour, 1)} total={4} label={`Tour ${tour} sur 4`} />
+-            </>
+-          ) : pret ? <Quota used={used} /> : <span>Renseigne le chapitre et le sujet pour lancer la génération.</span>}
++        <div className="grow">
++          {busy && job ? <LiveProgress job={job} /> : pret ? <Quota used={used} /> : <span>Renseigne le chapitre et le sujet pour lancer la génération.</span>}
+         </div>
+         <div className="btns">
+           <FxButton fx="magnetic" className="btn btn-lg" disabled={busy || !pret} onClick={() => void run()}>{busy ? 'Génération en cours…' : 'Générer la fiche'}</FxButton>
+         </div>
+       </div>
+-      <AttemptLog refreshKey={`${msg}|${busy}`} />
++      <AttemptLog refreshKey={`${notice}|${job?.state}|${job?.step}`} />
+ 
+       <h2 className="h2">Brouillons <small>{drafts.length > 0 ? `${drafts.length} à relire` : ''}</small></h2>
+       {drafts.length === 0 && <Empty title="Aucun brouillon">Les fiches générées arrivent ici, prêtes à être relues avant d’être validées.</Empty>}
+diff --git a/src/ui/JobBar.tsx b/src/ui/JobBar.tsx
+new file mode 100644
+index 0000000..fcffd94
+--- /dev/null
++++ b/src/ui/JobBar.tsx
+@@ -0,0 +1,41 @@
++import type { JobKind } from '../lib/jobs/store';
++import { dismissJob } from '../lib/jobs/store';
++import type { Entree } from '../App';
++import LiveProgress from './LiveProgress';
++import { resumeNow, cancelAuto } from './runCours';
++import { Notice } from './kit';
++import { useJobs } from './useJobs';
++
++const TAB: Record<JobKind, Entree> = { generate: 'Générer', cours: 'Cours' };
++
++/**
++ * Bandeau visible sur tous les onglets : tant qu'une tâche tourne (ou vient de finir) dans un autre onglet, on le voit ici
++ * et on peut y retourner d'un geste. Dans l'onglet de la tâche, c'est l'écran lui-même qui affiche la progression.
++ */
++export default function JobBar({ entree, onGo }: { entree: Entree; onGo: (e: Entree) => void }) {
++  const jobs = useJobs();
++  const list = (Object.values(jobs).filter(Boolean) as NonNullable<(typeof jobs)[JobKind]>[])
++    .filter((j) => TAB[j.kind] !== entree && !(j.dismissed && (j.state === 'done' || j.state === 'error')));
++  if (!list.length) return null;
++  return (
++    <div className="jobbar" aria-label="Tâches en cours">
++      {list.map((j) => {
++        const label = j.kind === 'generate' ? `Fiche : ${j.title}` : `Import : ${j.title}`;
++        if (j.state === 'running' || j.state === 'waiting') {
++          return (
++            <div key={j.kind} className="card jobcard">
++              <div className="jobhead"><b>{label}</b><button className="btn ghost" onClick={() => onGo(TAB[j.kind])}>Voir</button></div>
++              <LiveProgress job={j} onResume={j.kind === 'cours' ? resumeNow : undefined} onCancel={j.kind === 'cours' ? cancelAuto : undefined} />
++            </div>
++          );
++        }
++        return (
++          <Notice key={j.kind} kind={j.outcome === 'ok' ? 'ok' : 'error'}
++            action={<span className="jobacts"><button className="btn" onClick={() => onGo(TAB[j.kind])}>Ouvrir</button><button onClick={() => dismissJob(j.kind)}>Fermer</button></span>}>
++            <b>{label}</b> · {j.message}
++          </Notice>
++        );
++      })}
++    </div>
++  );
++}
+diff --git a/src/ui/Library.tsx b/src/ui/Library.tsx
+index e3b0d62..f32f40f 100644
+--- a/src/ui/Library.tsx
++++ b/src/ui/Library.tsx
+@@ -5,7 +5,12 @@ import { printPages } from '../lib/export/pdf';
+ import { exportPng, isLikelyBlank } from '../lib/export/png';
+ import { exportVerifiedPdf, type PdfReport } from '../lib/export/pdfBuild';
+ import { StatusBadge } from './status';
++import BlockPicker from './BlockPicker';
++import PaletteQuick from './PaletteQuick';
++import { useFichePalette } from './useFichePalette';
++import { refFromFiche, type Ref } from '../lib/generate/refs';
+ import { Empty, Notice } from './kit';
++import { libraryMessage } from '../lib/github/diagnose';
+ import type { GithubRepo } from '../lib/github/repo';
+ import { filterItems, loadIndex, setExemple, type LibraryItem } from '../lib/library/index';
+ import { renderFiche } from '../lib/render/renderFiche';
+@@ -13,9 +18,13 @@ import { validateFiche } from '../lib/schema/validate';
+ import type { Db } from '../lib/storage/db';
+ import type { Brief, Fiche } from '../lib/types';
+ 
+-type Props = { repo: GithubRepo | null; db: Db | null; onEdit?: (path: string) => void; onRedo?: (brief: Brief) => void };
++type Props = {
++  repo: GithubRepo | null; db: Db | null; onEdit?: (path: string) => void; onRedo?: (brief: Brief) => void;
++  /** Envoie des blocs de la fiche ouverte vers Générer (références de génération). */
++  onSendRefs?: (ref: Ref) => void;
++};
+ 
+-export default function Library({ repo, db, onEdit, onRedo }: Props) {
++export default function Library({ repo, db, onEdit, onRedo, onSendRefs }: Props) {
+   const [items, setItems] = useState<LibraryItem[]>([]);
+   const [msg, setMsg] = useState('');
+   const [matiere, setMatiere] = useState('');
+@@ -27,7 +36,7 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+ 
+   useEffect(() => {
+     if (!repo || !db) return;
+-    loadIndex(repo, db).then(setItems, () => setMsg('Impossible de charger la bibliothèque. Vérifie ton jeton dans Réglages'));
++    loadIndex(repo, db).then(setItems, (e) => setMsg(libraryMessage(e)));
+   }, [repo, db]);
+ 
+   const shown = useMemo(() => filterItems(items, { matiere: matiere || undefined, text }), [items, matiere, text]);
+@@ -45,7 +54,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+     } catch { setMsg("Impossible d'ouvrir ce fichier. Réessayer"); }
+   };
+ 
+-  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche); }, [fiche]);
++  const palette = useFichePalette();
++  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche, palette); }, [fiche, palette]);
+ 
+   const [report, setReport] = useState<PdfReport | null>(null);
+ 
+@@ -122,6 +132,7 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+             {fiche && <button className="btn ghost" onClick={() => printPages(fiche.meta.format ?? 'fiche', () => setMsg("La boîte d'impression s'est fermée. Vérifie que le fichier est bien dans Fichiers"))}>Imprimer</button>}
+             <span className="sp" />
+             {onEdit && sel.kind === 'fiche' && <button className="btn ghost" onClick={() => onEdit(sel.path)}>Modifier</button>}
++            {fiche && onSendRefs && <button className="btn ghost" onClick={() => onSendRefs(refFromFiche(fiche, sel.path))}>Envoyer vers Générer</button>}
+             {fiche && <button className="btn ghost" disabled={!fiche.meta.brief || !onRedo} onClick={() => fiche.meta.brief && onRedo?.(fiche.meta.brief)}>Refaire à partir du brief</button>}
+             {fiche && (
+               <button className="btn ghost" onClick={async () => {
+@@ -136,6 +147,8 @@ export default function Library({ repo, db, onEdit, onRedo }: Props) {
+               {report.problems.map((p, i) => <span key={i}>{p}</span>)}
+             </div>
+           )}
++          {fiche && <PaletteQuick />}
++          {fiche && onSendRefs && <BlockPicker fiche={fiche} path={sel.path} onSend={onSendRefs} />}
+           {!fiche && !cours && !msg && <p className="muted">Ouverture…</p>}
+           {fiche && <div className="print-area export-root previewbox" ref={preview} />}
+           {cours && <pre className="cours-text">{cours}</pre>}
+diff --git a/src/ui/LiveProgress.tsx b/src/ui/LiveProgress.tsx
+new file mode 100644
+index 0000000..ce7cda8
+--- /dev/null
++++ b/src/ui/LiveProgress.tsx
+@@ -0,0 +1,41 @@
++import type { Job } from '../lib/jobs/store';
++import { Stepper } from './kit';
++import { StatusBadge } from './status';
++import { useNow } from './useJobs';
++
++const fmt = (sec: number) => (sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${String(sec % 60).padStart(2, '0')} s`);
++
++/**
++ * Progression d'une tâche longue : phrase d'état, étapes, temps écoulé qui défile chaque seconde et barre animée.
++ * Le temps qui avance prouve que l'appli travaille, même quand Gemini met longtemps à répondre.
++ */
++export default function LiveProgress({ job, onResume, onCancel }: { job: Job; onResume?: () => void; onCancel?: () => void }) {
++  const active = job.state === 'running' || job.state === 'waiting';
++  const now = useNow(active);
++  const since = Math.max(0, Math.round((now - job.since) / 1000));
++  const total = Math.max(0, Math.round((now - job.startedAt) / 1000));
++  const waiting = job.state === 'waiting';
++  const unit = job.kind === 'generate' ? 'Tour' : 'Lot';
++  const left = waiting && job.resumeAt ? Math.max(0, Math.ceil((job.resumeAt - now) / 1000)) : 0;
++  return (
++    <div className="liveprog" data-waiting={waiting || undefined}>
++      <div className="liveprog-head">
++        <StatusBadge state={waiting ? 'retry' : 'running'}>{waiting ? 'En attente' : 'En cours'}</StatusBadge>
++        <b role="status" aria-live="polite">{job.message}</b>
++      </div>
++      {job.step > 0 && <Stepper current={job.step} total={job.steps} label={`${unit} ${job.step} sur ${job.steps}`} />}
++      {!waiting && <div className="indeterminate" aria-hidden="true"><i /></div>}
++      <small className="liveprog-time" aria-hidden="true">
++        {job.step > 0 ? `${unit} ${job.step} sur ${job.steps} · ` : ''}étape en cours depuis {fmt(since)} · total {fmt(total)}
++        {waiting ? ` · reprise dans ${fmt(left)}` : ''}
++        {!waiting && since >= 45 ? ' · Gemini met du temps à répondre, la requête est toujours en cours' : ''}
++      </small>
++      {waiting && (onResume || onCancel) && (
++        <div className="toolbar" style={{ marginTop: 8, marginBottom: 0 }}>
++          {onResume && <button className="btn" onClick={onResume}>Reprendre maintenant</button>}
++          {onCancel && <button onClick={onCancel}>Annuler la reprise</button>}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/ui/ModelSwitch.tsx b/src/ui/ModelSwitch.tsx
+new file mode 100644
+index 0000000..bccd3a0
+--- /dev/null
++++ b/src/ui/ModelSwitch.tsx
+@@ -0,0 +1,35 @@
++import { useEffect, useState } from 'react';
++import { getSettings, saveSettings } from '../lib/storage/settings';
++
++/**
++ * Bascule entre le modèle principal et le modèle de secours. Le modèle choisi passe en premier, l'autre sert de repli.
++ * S'applique au prochain envoi, y compris pendant une génération ou un import en cours.
++ */
++export default function ModelSwitch({ compact = false }: { compact?: boolean }) {
++  const [s, setS] = useState(getSettings());
++  useEffect(() => {
++    const f = () => setS(getSettings());
++    window.addEventListener('sequentia-settings-changed', f);
++    return () => window.removeEventListener('sequentia-settings-changed', f);
++  }, []);
++  const hasAlt = s.modelSecours.trim() !== '';
++  const active = hasAlt && s.modeleActif === 'secours' ? 'secours' : 'principal';
++  const pick = (v: 'principal' | 'secours') => {
++    saveSettings({ modeleActif: v });
++    window.dispatchEvent(new Event('sequentia-settings-changed'));
++  };
++  return (
++    <div className="modelswitch" data-compact={compact || undefined}>
++      <span className="ms-label">Modèle utilisé</span>
++      <div className="ms-group" role="radiogroup" aria-label="Modèle utilisé">
++        <button type="button" role="radio" aria-checked={active === 'principal'} onClick={() => pick('principal')}>
++          <b>Principal</b><small>{s.model}</small>
++        </button>
++        <button type="button" role="radio" aria-checked={active === 'secours'} disabled={!hasAlt}
++          title={hasAlt ? undefined : 'Renseigne un modèle de secours dans Réglages'} onClick={() => pick('secours')}>
++          <b>Secours</b><small>{hasAlt ? s.modelSecours : 'non renseigné'}</small>
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/ui/PaletteQuick.tsx b/src/ui/PaletteQuick.tsx
+new file mode 100644
+index 0000000..688bc6e
+--- /dev/null
++++ b/src/ui/PaletteQuick.tsx
+@@ -0,0 +1,25 @@
++import { useEffect, useState } from 'react';
++import { PRESETS } from '../lib/render/palette';
++import { getSettings, saveSettings } from '../lib/storage/settings';
++import { SelectField } from './Field';
++
++/** Choix rapide des couleurs des fiches à côté de l'aperçu ; le détail (couleurs personnalisées) est dans Réglages. */
++export default function PaletteQuick() {
++  const [c, setC] = useState(() => getSettings().ficheCouleurs);
++  useEffect(() => {
++    const f = () => setC(getSettings().ficheCouleurs);
++    window.addEventListener('sequentia-settings-changed', f);
++    return () => window.removeEventListener('sequentia-settings-changed', f);
++  }, []);
++  return (
++    <div className="modelrow">
++      <SelectField label="Couleurs des fiches" value={c.preset} onChange={(e) => {
++        saveSettings({ ficheCouleurs: { ...getSettings().ficheCouleurs, preset: e.target.value } });
++        window.dispatchEvent(new Event('sequentia-settings-changed'));
++      }}>
++        {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
++        <option value="perso">Personnalisé (voir Réglages)</option>
++      </SelectField>
++    </div>
++  );
++}
+diff --git a/src/ui/Review.tsx b/src/ui/Review.tsx
+index 68b1447..48e0a32 100644
+--- a/src/ui/Review.tsx
++++ b/src/ui/Review.tsx
+@@ -17,6 +17,8 @@ import AsyncButton from './AsyncButton';
+ import { TextArea, TextField } from './Field';
+ import { makeGenerateDeps, renderOffscreen } from './geminiDeps';
+ import { messageFor } from './messages';
++import PaletteQuick from './PaletteQuick';
++import { useFichePalette } from './useFichePalette';
+ import { Empty, Notice } from './kit';
+ import { StatusBadge } from './status';
+ 
+@@ -65,8 +67,9 @@ export default function Review({ repo, db, draft, path, onGoto }: Props) {
+     // Contrôles mesurés hors écran : l'aperçu peut être masqué (onglets en portrait) et un élément masqué n'a pas de hauteur.
+     const mesure = renderOffscreen(fiche);
+     setChecks({ schema: validateFiche(fiche), lint: lintLatex(fiche), katex: mesure.katexErrors, overflow: mesure.overflow });
+-    if (preview.current) renderFiche(preview.current, fiche);
+   }, [fiche]);
++  const palette = useFichePalette();
++  useEffect(() => { if (fiche && preview.current) renderFiche(preview.current, fiche, palette); }, [fiche, palette]);
+ 
+   const updateBlock = (i: number, j: number, key: string, value: unknown) =>
+     setFiche((f) => f && { ...f, pages: f.pages.map((p, pi) => (pi !== i ? p : { ...p, blocks: p.blocks.map((b, bj) => (bj !== j ? b : { ...b, [key]: value })) })) });
+@@ -181,6 +184,7 @@ export default function Review({ repo, db, draft, path, onGoto }: Props) {
+           </details>
+         </div>
+         <div className={`pane${tab === 'preview' ? '' : ' hidden'}`}>
++          <PaletteQuick />
+           <div className="export-root previewbox" ref={preview} />
+         </div>
+       </div>
+diff --git a/src/ui/Settings.tsx b/src/ui/Settings.tsx
+index c313ac3..f3247d7 100644
+--- a/src/ui/Settings.tsx
++++ b/src/ui/Settings.tsx
+@@ -1,22 +1,15 @@
+ import { useState } from 'react';
+ import AsyncButton from './AsyncButton';
+ import { TextField } from './Field';
++import FichePaletteSettings from './FichePaletteSettings';
+ import ThemeSettings from './ThemeSettings';
+ import { Notice, Section } from './kit';
++import ModelSwitch from './ModelSwitch';
++import { diagnoseGithub } from '../lib/github/diagnose';
+ import { clearKeys, getSettings, saveSettings, type Settings as S } from '../lib/storage/settings';
+ 
+ async function testGithub(s: S): Promise<string> {
+-  try {
+-    const r = await fetch(`https://api.github.com/repos/${s.owner}/${s.repo}`, {
+-      headers: { Authorization: `Bearer ${s.githubToken}`, Accept: 'application/vnd.github+json' },
+-    });
+-    if (r.ok) return 'GitHub : connecté';
+-    if (r.status === 401) return 'Jeton refusé ou expiré. Crée-en un nouveau (voir le README)';
+-    if (r.status === 404) return 'Dépôt introuvable, ou jeton sans accès à ce dépôt';
+-    return `GitHub a répondu ${r.status}`;
+-  } catch {
+-    return "GitHub n'a pas répondu. Réessayer";
+-  }
++  return (await diagnoseGithub({ owner: s.owner, repo: s.repo, token: s.githubToken })).message;
+ }
+ async function testGemini(s: S): Promise<string> {
+   try {
+@@ -59,11 +52,12 @@ export default function Settings() {
+           {msg && <Notice kind={ok ? 'ok' : msg === 'Clés effacées' ? 'info' : 'error'}>{msg}</Notice>}
+         </Section>
+ 
+-        <Section title="Modèle" hint="Le modèle de secours ne sert que si le principal reste surchargé.">
++        <Section title="Modèle" hint="Le modèle choisi passe en premier ; l’autre prend le relais s’il reste surchargé. La bascule agit dès le prochain envoi.">
+           <div className="grid2">
+             {text('model', 'Modèle Gemini')}
+             {text('modelSecours', 'Modèle de secours (optionnel)')}
+           </div>
++          <ModelSwitch />
+         </Section>
+ 
+         <Section title="Limites" hint="Elles évitent de dépasser ton quota Gemini.">
+@@ -75,6 +69,7 @@ export default function Settings() {
+         </Section>
+       </div>
+       <ThemeSettings />
++      <FichePaletteSettings />
+     </>
+   );
+ }
+diff --git a/src/ui/draftFrom.ts b/src/ui/draftFrom.ts
+new file mode 100644
+index 0000000..08075f1
+--- /dev/null
++++ b/src/ui/draftFrom.ts
+@@ -0,0 +1,13 @@
++import type { GenerateResult } from '../lib/generate/loop';
++import type { Db, Draft } from '../lib/storage/db';
++import type { Brief, Fiche } from '../lib/types';
++
++/** Enregistre le résultat d'une génération comme brouillon (même incomplet : le dernier essai reste consultable). */
++export async function putDraftFrom(db: Db, brief: Brief, result: GenerateResult): Promise<Draft> {
++  const fiche: Fiche | null = result.fiche
++    ? { ...result.fiche, meta: { ...result.fiche.meta, statut: 'a_verifier', brief, format: result.fiche.meta.format ?? brief.format ?? 'fiche' } }
++    : null;
++  const draft: Draft = { id: brief.id, fiche, raw: result.last, brief, problems: result.problems, updatedAt: Date.now() };
++  await db.putDraft(draft);
++  return draft;
++}
+diff --git a/src/ui/geminiDeps.ts b/src/ui/geminiDeps.ts
+index 7e32f2d..e64eab4 100644
+--- a/src/ui/geminiDeps.ts
++++ b/src/ui/geminiDeps.ts
+@@ -6,7 +6,8 @@ import type { GenerateDeps } from '../lib/generate/loop';
+ import { checkOverflow, renderFiche } from '../lib/render/renderFiche';
+ import { lintLatex } from '../lib/schema/lint';
+ import { validateFiche } from '../lib/schema/validate';
+-import type { Settings } from '../lib/storage/settings';
++import { getSettings, type Settings } from '../lib/storage/settings';
++import { MAX_TOURS } from '../lib/generate/loop';
+ import type { Fiche } from '../lib/types';
+ 
+ /** Rend la fiche hors écran, aux dimensions de son format, pour mesurer erreurs KaTeX et débordement. */
+@@ -24,15 +25,23 @@ export function renderOffscreen(f: Fiche): { katexErrors: string[]; overflow: nu
+  * Dépendances de la boucle de génération : Gemini (plafonds locaux, reprises, modèle de secours),
+  * validation, lint, rendu. `onEvent` reçoit chaque tentative (« Serveur surchargé, nouvel essai dans 2 s »).
+  */
+-export function makeGenerateDeps(s: Settings, system: string, onTour: (n: number) => void, onEvent?: (e: RetryEvent) => void): GenerateDeps {
++export function makeGenerateDeps(
++  s: Settings, system: string, onTour: (n: number) => void, onEvent?: (e: RetryEvent) => void, onPhase?: (message: string) => void,
++): GenerateDeps {
+   const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
+   let n = 0;
+   return {
+     llm: async (messages) => {
+       onTour(++n);
+-      const r = await robustPost({ key: s.geminiKey, models: modelsOf(s), budget, onEvent }, buildBody(system, messages));
++      // Les modèles sont relus à chaque envoi : le bouton « Modèle utilisé » agit dès le prochain appel.
++      const models = modelsOf(getSettings());
++      onPhase?.(`Tour ${n} sur ${MAX_TOURS} : envoi à Gemini (${models[0]})…`);
++      const r = await robustPost({ key: s.geminiKey, models, budget, onEvent }, buildBody(system, messages));
++      onPhase?.(`Tour ${n} sur ${MAX_TOURS} : réponse reçue, lecture du JSON…`);
+       return r.text;
+     },
+-    validate: validateFiche, lint: lintLatex, render: renderOffscreen,
++    validate: (d) => { onPhase?.('Contrôle du schéma…'); return validateFiche(d); },
++    lint: (f) => { onPhase?.('Contrôle du LaTeX…'); return lintLatex(f); },
++    render: (f) => { onPhase?.('Rendu de la fiche et contrôle du débordement…'); return renderOffscreen(f); },
+   };
+ }
+diff --git a/src/ui/messages.ts b/src/ui/messages.ts
+index 73b9213..b39532f 100644
+--- a/src/ui/messages.ts
++++ b/src/ui/messages.ts
+@@ -1,10 +1,11 @@
++import { getSettings } from '../lib/storage/settings';
+ import { AuthError, BlockedError, ConflictError, NetworkError, NotFoundError, RateLimitError, ServerBusyError, TruncatedError } from '../lib/errors';
+ 
+ /** Message pour l'utilisateur : ce qui s'est passé, puis quoi faire, sans jargon. */
+ export function messageFor(err: unknown, ctx: { offline?: boolean; source?: 'gemini' | 'github' } = {}): string {
+   const source = ctx.source ?? 'gemini';
+   if (err instanceof RateLimitError) return `Quota atteint. Réessaie dans ${err.retryAfterSec} secondes`;
+-  if (err instanceof ServerBusyError) return `${source === 'github' ? 'GitHub' : 'Gemini'} est surchargé (${err.status}) malgré plusieurs essais. Réessaie dans quelques minutes, ta progression est gardée`;
++  if (err instanceof ServerBusyError) return `${source === 'github' ? 'GitHub' : 'Gemini'} est surchargé (${err.status}) malgré plusieurs essais. ${source === 'github' ? '' : getSettings().modelSecours.trim() ? 'Bascule sur le modèle de secours avec le bouton « Modèle utilisé », ou réessaie' : 'Renseigne un modèle de secours dans Réglages, ou réessaie'} dans quelques minutes, ta progression est gardée`;
+   if (err instanceof TruncatedError) return 'La réponse était trop longue et a été coupée. Réduis le nombre de pages par lot dans Réglages';
+   if (err instanceof BlockedError) return `Gemini a refusé de traiter ce contenu (${err.reason}). Reformule ou saute cette page`;
+   if (err instanceof NetworkError) {
+diff --git a/src/ui/runCours.ts b/src/ui/runCours.ts
+new file mode 100644
+index 0000000..d904a58
+--- /dev/null
++++ b/src/ui/runCours.ts
+@@ -0,0 +1,102 @@
++import { ImportQueue } from '../lib/cours/queue';
++import { transcribeLot, transcribeRobust } from '../lib/cours/transcribe';
++import { verifyLot } from '../lib/cours/verify';
++import { NetworkError, RateLimitError } from '../lib/errors';
++import { RequestBudget } from '../lib/gemini/budget';
++import { modelsOf, type RobustCfg } from '../lib/gemini/robust';
++import { dismissJob, finishJob, getJob, isRunning, startJob, updateJob } from '../lib/jobs/store';
++import type { Db } from '../lib/storage/db';
++import { getSettings } from '../lib/storage/settings';
++import { messageFor } from './messages';
++
++/** Reprises automatiques : au plus 3 d'affilée, puis on laisse la main. */
++const MAX_AUTO = 3;
++let timer: number | undefined;
++let autoTries = 0;
++let pending: { db: Db; id: string; title: string } | null = null;
++
++/** File d'import branchée sur Gemini : reprises, modèle de secours, plafonds locaux, contrôle de chaque lot. */
++function buildQueue(db: Db, onErr: (e: unknown) => void, onMessage: (m: string) => void): ImportQueue {
++  const s = getSettings();
++  const budget = new RequestBudget({ perMinute: s.maxPerMinute, perDay: s.maxPerDay }, undefined, 'sequentia.budget');
++  return new ImportQueue(db, async (lot) => {
++    try {
++      // Modèles relus à chaque lot : le bouton « Modèle utilisé » agit dès le lot suivant.
++      const cfg: RobustCfg = { key: s.geminiKey, models: modelsOf(getSettings()), budget, onEvent: (e) => onMessage(e.message) };
++      return await transcribeLot(lot, { llm: (l) => transcribeRobust({ cfg, lot: l }) });
++    } catch (e) { onErr(e); throw e; }
++  }, (lot, md) => verifyLot(lot, md));
++}
++
++/** Annule la reprise automatique prévue (la progression reste enregistrée). */
++export function cancelAuto(): void {
++  window.clearTimeout(timer);
++  timer = undefined;
++  pending = null;
++  autoTries = 0;
++  if (getJob('cours')?.state === 'waiting') finishJob('cours', { state: 'error', outcome: 'warn', message: 'Reprise automatique annulée. La progression est gardée : reprends quand tu veux' });
++}
++
++/** Relance tout de suite au lieu d'attendre la fin du délai. */
++export function resumeNow(): void {
++  if (!pending) return;
++  const c = pending;
++  window.clearTimeout(timer);
++  pending = null;
++  void startCoursRun(c.db, c.id, c.title, true);
++}
++
++const phaseText = (p: { index: number; total: number }) => `Lot ${p.index + 1} sur ${p.total}`;
++
++/**
++ * Transcrit les lots restants d'un import. Continue quand on change d'onglet ; après une pause réseau ou quota court,
++ * repart seul (3 fois au plus). Renvoie false si une transcription est déjà en cours.
++ */
++export async function startCoursRun(db: Db, id: string, title: string, auto = false): Promise<boolean> {
++  if (isRunning('cours')) return false;
++  window.clearTimeout(timer);
++  pending = null;
++  if (!auto) autoTries = 0;
++  startJob('cours', { title, ref: id, steps: 1, message: "Reprise de l'import…" });
++  let last: unknown;
++  const q = buildQueue(db, (e) => { last = e; }, (m) => updateJob('cours', { message: m }));
++  try {
++    const r = await q.run(id, (p) => {
++      if (p.phase === 'start') updateJob('cours', { step: p.index + 1, steps: p.total, message: `${phaseText(p)} : transcription par Gemini (${modelsOf(getSettings())[0]})…` });
++      else updateJob('cours', { message: `${phaseText(p)} ${p.state === 'ok' ? 'transcrit et vérifié' : p.state === 'suspect' ? 'transcrit, à contrôler' : 'en échec'}` });
++    });
++    if (r === 'done') {
++      autoTries = 0;
++      finishJob('cours', { state: 'done', outcome: 'ok', message: 'Transcription terminée. Relis les lots marqués « À contrôler »' });
++    } else if ((last instanceof NetworkError || (last instanceof RateLimitError && last.retryAfterSec <= 120)) && autoTries < MAX_AUTO && navigator.onLine !== false) {
++      autoTries += 1;
++      const delay = last instanceof RateLimitError ? last.retryAfterSec + 1 : 30;
++      pending = { db, id, title };
++      updateJob('cours', { state: 'waiting', resumeAt: Date.now() + delay * 1000, message: `${messageFor(last)}. Nouvel essai automatique (${autoTries}/${MAX_AUTO}). La progression est gardée` });
++      timer = window.setTimeout(() => { pending = null; void startCoursRun(db, id, title, true); }, delay * 1000);
++    } else {
++      finishJob('cours', { state: 'error', outcome: 'error', message: `${last ? messageFor(last) : 'En pause'}. La progression est gardée` });
++    }
++  } catch (e) {
++    finishJob('cours', { state: 'error', outcome: 'error', message: messageFor(e) });
++  }
++  return true;
++}
++
++/** Relance un seul lot (suspect ou en échec). */
++export async function rerunCoursLot(db: Db, id: string, i: number, title: string): Promise<boolean> {
++  if (isRunning('cours')) return false;
++  window.clearTimeout(timer);
++  pending = null;
++  startJob('cours', { title: `${title} · lot ${i + 1}`, ref: id, steps: 1, message: `Relance du lot ${i + 1}…` });
++  try {
++    const q = buildQueue(db, () => undefined, (m) => updateJob('cours', { message: m }));
++    const st = await q.rerun(id, i, (p) => updateJob('cours', { step: 1, message: `Lot ${p.index + 1} : transcription par Gemini (${modelsOf(getSettings())[0]})…` }));
++    finishJob('cours', { state: 'done', outcome: st.state === 'ok' ? 'ok' : 'warn', message: st.state === 'ok' ? `Lot ${i + 1} relu et vérifié` : `Lot ${i + 1} retranscrit, mais il reste à contrôler` });
++  } catch (e) {
++    finishJob('cours', { state: 'error', outcome: 'error', message: messageFor(e) });
++  }
++  return true;
++}
++
++export { dismissJob };
+diff --git a/src/ui/runGenerate.ts b/src/ui/runGenerate.ts
+new file mode 100644
+index 0000000..f704731
+--- /dev/null
++++ b/src/ui/runGenerate.ts
+@@ -0,0 +1,45 @@
++import { buildPrompt } from '../lib/generate/context';
++import { MAX_TOURS, generateFiche } from '../lib/generate/loop';
++import type { RefSet } from '../lib/generate/refs';
++import { loadSources } from '../lib/generate/sources';
++import type { GithubRepo } from '../lib/github/repo';
++import { finishJob, isRunning, startJob, updateJob } from '../lib/jobs/store';
++import schema from '../lib/schema/schema.json';
++import { putDraftFrom } from './draftFrom';
++import type { Db } from '../lib/storage/db';
++import { getSettings } from '../lib/storage/settings';
++import type { Brief } from '../lib/types';
++import { makeGenerateDeps } from './geminiDeps';
++import { messageFor } from './messages';
++
++/**
++ * Lance la génération d'une fiche, hors de tout composant : elle continue quand on change d'onglet, et sa progression
++ * est publiée dans le store des tâches. Renvoie false si une génération est déjà en cours.
++ */
++export async function runGenerate(o: { repo: GithubRepo; db: Db; brief: Brief; refs?: RefSet }): Promise<boolean> {
++  if (isRunning('generate')) return false;
++  const s = getSettings();
++  startJob('generate', { title: o.brief.sujet || o.brief.id, steps: MAX_TOURS, ref: o.brief.id, message: 'Lecture de ton dépôt : charte, exemples et cours…' });
++  try {
++    await document.fonts?.ready;
++    let src;
++    try { src = await loadSources(o.repo, o.db, o.brief); }
++    catch (e) { finishJob('generate', { state: 'error', outcome: 'error', message: messageFor(e, { source: 'github' }) }); return true; }
++    const prompt = buildPrompt({ charte: src.charte, schema: schema as object, examples: src.examples, sections: src.sections, brief: o.brief, refs: o.refs });
++    updateJob('generate', { step: 1, message: 'Préparation de la requête…' });
++    const result = await generateFiche(o.brief, prompt, makeGenerateDeps(
++      s, prompt.system,
++      (n) => updateJob('generate', { step: n }),
++      (e) => updateJob('generate', { message: e.message }),
++      (m) => updateJob('generate', { message: m }),
++    ));
++    await putDraftFrom(o.db, o.brief, result);
++    const message = result.error ? messageFor(result.error)
++      : !result.ok ? "La fiche n'a pas passé tous les contrôles. Le dernier essai est gardé dans les brouillons"
++      : `Brouillon prêt après ${result.tours} tour${result.tours > 1 ? 's' : ''}`;
++    finishJob('generate', { state: result.error ? 'error' : 'done', outcome: result.error ? 'error' : result.ok ? 'ok' : 'warn', message, problems: result.problems, ref: o.brief.id });
++  } catch (e) {
++    finishJob('generate', { state: 'error', outcome: 'error', message: messageFor(e) });
++  }
++  return true;
++}
+diff --git a/src/ui/useFichePalette.ts b/src/ui/useFichePalette.ts
+new file mode 100644
+index 0000000..ce73887
+--- /dev/null
++++ b/src/ui/useFichePalette.ts
+@@ -0,0 +1,15 @@
++import { useEffect, useMemo, useState } from 'react';
++import { resolvePalette, type FichePalette } from '../lib/render/palette';
++import { getSettings } from '../lib/storage/settings';
++
++/** Palette des fiches choisie dans les réglages, mise à jour dès qu'elle change (aperçu, export). */
++export function useFichePalette(): FichePalette {
++  const [c, setC] = useState(() => getSettings().ficheCouleurs);
++  useEffect(() => {
++    const f = () => setC(getSettings().ficheCouleurs);
++    window.addEventListener('sequentia-settings-changed', f);
++    return () => window.removeEventListener('sequentia-settings-changed', f);
++  }, []);
++  const key = JSON.stringify(c);
++  return useMemo(() => resolvePalette(c), [key]); // eslint-disable-line react-hooks/exhaustive-deps
++}
+diff --git a/src/ui/useJobs.ts b/src/ui/useJobs.ts
+new file mode 100644
+index 0000000..6dcf947
+--- /dev/null
++++ b/src/ui/useJobs.ts
+@@ -0,0 +1,18 @@
++import { useEffect, useState, useSyncExternalStore } from 'react';
++import { getJobs, subscribeJobs, type Job, type JobKind } from '../lib/jobs/store';
++
++/** Tâches longues en cours ou terminées : elles survivent aux changements d'onglet. */
++export const useJobs = () => useSyncExternalStore(subscribeJobs, getJobs, getJobs);
++export const useJob = (kind: JobKind): Job | undefined => useJobs()[kind];
++
++/** Heure courante rafraîchie chaque seconde tant que `active`, pour afficher « depuis 12 s ». */
++export function useNow(active: boolean, every = 1000): number {
++  const [now, setNow] = useState(() => Date.now());
++  useEffect(() => {
++    if (!active) return;
++    setNow(Date.now());
++    const t = window.setInterval(() => setNow(Date.now()), every);
++    return () => window.clearInterval(t);
++  }, [active, every]);
++  return now;
++}
+diff --git a/tests/diagnose.test.ts b/tests/diagnose.test.ts
+new file mode 100644
+index 0000000..3341202
+--- /dev/null
++++ b/tests/diagnose.test.ts
+@@ -0,0 +1,51 @@
++import { describe, expect, it, vi } from 'vitest';
++import { diagnoseGithub, libraryMessage } from '../src/lib/github/diagnose';
++import { AuthError, ConflictError, NetworkError, NotFoundError, RateLimitError } from '../src/lib/errors';
++import { GithubRepo } from '../src/lib/github/repo';
++
++const json = (status: number, body: unknown = {}, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers });
++const o = { owner: 'DracoMassi', repo: 'Fiches', token: 'tok' };
++const api = (meta: Response, tree: Response) => vi.fn(async (u: string) => (String(u).endsWith('/git/trees/HEAD') ? tree : meta)) as unknown as typeof fetch;
++const auth = (f: unknown) => ((f as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit])[1].headers;
++
++describe('diagnostic GitHub', () => {
++  it('connecté seulement si le dépôt ET son contenu sont lisibles', async () => {
++    expect(await diagnoseGithub(o, api(json(200), json(200, { tree: [{ path: 'corpus' }] })))).toEqual({ ok: true, message: 'GitHub : connecté' });
++  });
++  it('chaque cause a son message : Contents, 404, 401, dépôt vide, limite, corpus absent', async () => {
++    const cas: [Response, Response, string][] = [
++      [json(200), json(403), 'Contents'], [json(404), json(404), 'Dépôt introuvable'], [json(401), json(401), '401'],
++      [json(200), json(409), 'vide'], [json(403, {}, { 'x-ratelimit-remaining': '0' }), json(403), 'limite'],
++      [json(200), json(200, { tree: [{ path: 'README.md' }] }), 'corpus/'],
++    ];
++    for (const [meta, tree, attendu] of cas) {
++      const r = await diagnoseGithub(o, api(meta, tree));
++      expect(r.ok).toBe(false);
++      expect(r.message).toContain(attendu);
++    }
++  });
++  it('réseau coupé, champs vides, espaces autour du jeton retirés', async () => {
++    expect((await diagnoseGithub(o, vi.fn(async () => { throw new TypeError('x'); }) as unknown as typeof fetch)).message).toContain("n'a pas répondu");
++    expect((await diagnoseGithub({ ...o, token: '' })).ok).toBe(false);
++    const f = vi.fn(async () => json(200, { tree: [{ path: 'corpus' }] }));
++    await diagnoseGithub({ ...o, token: '  tok\n' }, f as unknown as typeof fetch);
++    expect(auth(f)).toMatchObject({ Authorization: 'Bearer tok' });
++  });
++  it('GithubRepo distingue 401, 403 et quota épuisé, et nettoie le jeton', async () => {
++    const repo = (res: Response, token = 'tok') => new GithubRepo('o', 'r', token, vi.fn(async () => res) as unknown as typeof fetch);
++    await expect(repo(json(401)).listTree()).rejects.toMatchObject({ name: 'AuthError', status: 401 });
++    await expect(repo(json(403)).listTree()).rejects.toMatchObject({ name: 'AuthError', status: 403 });
++    await expect(repo(json(403, {}, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 120) })).listTree()).rejects.toBeInstanceOf(RateLimitError);
++    const f = vi.fn(async () => json(200, { tree: [] }));
++    await new GithubRepo('o', 'r', '  abc \n', f as unknown as typeof fetch).listTree();
++    expect(auth(f)).toMatchObject({ Authorization: 'Bearer abc' });
++  });
++  it('libraryMessage : un message par cause', () => {
++    expect(libraryMessage(new AuthError('x', 403))).toContain('Contents');
++    expect(libraryMessage(new AuthError('x', 401))).toContain('401');
++    expect(libraryMessage(new NotFoundError())).toContain('404');
++    expect(libraryMessage(new ConflictError())).toContain('vide');
++    expect(libraryMessage(new NetworkError())).toContain("n'a pas répondu");
++    expect(libraryMessage(new Error('boum'))).toContain('boum');
++  });
++});
+diff --git a/tests/gemini2.test.ts b/tests/gemini2.test.ts
+index 32abe25..c3f1cc4 100644
+--- a/tests/gemini2.test.ts
++++ b/tests/gemini2.test.ts
+@@ -6,81 +6,56 @@ import { transcribeRobust } from '../src/lib/cours/transcribe';
+ import { BlockedError, NetworkError, RateLimitError, ServerBusyError, TruncatedError } from '../src/lib/errors';
+ import { messageFor } from '../src/ui/messages';
+ 
+-const resp = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
++const resp = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status });
+ const ok = (text: string, finishReason = 'STOP') => resp(200, { candidates: [{ finishReason, content: { parts: [{ text }] } }] });
+-const post = (f: () => Promise<Response>) => postGeminiDetailed({ key: 'K', model: 'm', body: {}, fetchImpl: vi.fn(f) as unknown as typeof fetch });
++const asFetch = (f: unknown) => f as typeof fetch;
++const post = (r: () => Response) => postGeminiDetailed({ key: 'K', model: 'm', body: {}, fetchImpl: asFetch(async () => r()) });
++const fast = { sleep: async () => {}, random: () => 0, log: () => {} };
+ const lot = { index: 0, fromPage: 1, toPage: 2, data: new Uint8Array([1, 2, 3]) };
+ 
+-describe('postGeminiDetailed', () => {
+-  it('529, 503, 500, 502 et 504 donnent ServerBusyError avec le code', async () => {
+-    for (const s of [500, 502, 503, 504, 529]) await expect(post(async () => resp(s))).rejects.toMatchObject({ name: 'ServerBusyError', status: s });
+-  });
+-  it('ServerBusyError reste une NetworkError', async () => {
+-    await expect(post(async () => resp(529))).rejects.toBeInstanceOf(NetworkError);
+-  });
+-  it('renvoie la raison d\'arrêt', async () => {
+-    expect(await post(async () => ok('x', 'MAX_TOKENS'))).toEqual({ text: 'x', finishReason: 'MAX_TOKENS' });
+-  });
+-  it('contenu bloqué : BlockedError', async () => {
+-    await expect(post(async () => resp(200, { promptFeedback: { blockReason: 'SAFETY' } }))).rejects.toBeInstanceOf(BlockedError);
+-  });
+-  it('réponse vide sans motif : NetworkError', async () => {
+-    await expect(post(async () => resp(200, { candidates: [{ content: { parts: [] } }] }))).rejects.toBeInstanceOf(NetworkError);
++describe('client Gemini', () => {
++  it('traduit les réponses : surcharge (code conservé), raison d\'arrêt, contenu refusé, réponse vide', async () => {
++    for (const s of [500, 502, 503, 504, 529]) await expect(post(() => resp(s))).rejects.toMatchObject({ name: 'ServerBusyError', status: s });
++    await expect(post(() => resp(529))).rejects.toBeInstanceOf(NetworkError);
++    expect(await post(() => ok('x', 'MAX_TOKENS'))).toEqual({ text: 'x', finishReason: 'MAX_TOKENS' });
++    await expect(post(() => resp(200, { promptFeedback: { blockReason: 'SAFETY' } }))).rejects.toBeInstanceOf(BlockedError);
++    await expect(post(() => resp(200, { candidates: [{ content: { parts: [] } }] }))).rejects.toBeInstanceOf(NetworkError);
+   });
+ });
+ 
+ describe('robustPost', () => {
+-  const fast = { sleep: async () => {}, random: () => 0, log: () => {} };
+-  it('529 puis succès : la tentative en échec est remboursée dans le budget', async () => {
++  it('529 puis succès : la tentative refusée est remboursée dans le budget', async () => {
+     const budget = new RequestBudget({ perMinute: 10, perDay: 100 });
+     const seq = [resp(529), ok('{"a":1}')];
+     const f = vi.fn(async () => seq.shift() as Response);
+-    const r = await robustPost({ key: 'K', models: ['m'], budget, fetchImpl: f as unknown as typeof fetch, retry: fast }, {});
+-    expect(r.text).toBe('{"a":1}');
+-    expect(f).toHaveBeenCalledTimes(2);
++    expect((await robustPost({ key: 'K', models: ['m'], budget, fetchImpl: asFetch(f), retry: fast }, {})).text).toBe('{"a":1}');
+     expect(budget.used().day).toBe(1);
+   });
+-  it('plafond local atteint pour longtemps : aucun appel réseau', async () => {
+-    const budget = new RequestBudget({ perMinute: 1, perDay: 100 });
+-    budget.record();
+-    const f = vi.fn();
+-    await expect(robustPost({ key: 'K', models: ['m'], budget, fetchImpl: f as unknown as typeof fetch, retry: fast }, {})).rejects.toBeInstanceOf(RateLimitError);
+-    expect(f).not.toHaveBeenCalled();
+-  });
+-  it('modèle principal surchargé : le secours répond', async () => {
++  it('principal surchargé : 4 essais puis le secours ; plafond local atteint : aucun appel', async () => {
+     const urls: string[] = [];
+     const f = vi.fn(async (u: string) => { urls.push(u); return u.includes('/models/p:') ? resp(529) : ok('ok'); });
+-    const r = await robustPost({ key: 'K', models: ['p', 's'], fetchImpl: f as unknown as typeof fetch, retry: fast }, {});
+-    expect(r.text).toBe('ok');
+-    expect(urls.filter((u) => u.includes('/models/p:')).length).toBe(4);
+-    expect(urls.filter((u) => u.includes('/models/s:')).length).toBe(1);
+-  });
+-});
+-
+-describe('modelsOf', () => {
+-  it('principal puis secours, sans vide ni espace', () => {
+-    expect(modelsOf({ model: 'a', modelSecours: ' b ' })).toEqual(['a', 'b']);
+-    expect(modelsOf({ model: 'a', modelSecours: '' })).toEqual(['a']);
++    expect((await robustPost({ key: 'K', models: ['p', 's'], fetchImpl: asFetch(f), retry: fast }, {})).text).toBe('ok');
++    expect(urls.filter((u) => u.includes('/models/p:'))).toHaveLength(4);
++    const budget = new RequestBudget({ perMinute: 1, perDay: 100 });
++    budget.record();
++    const g = vi.fn();
++    await expect(robustPost({ key: 'K', models: ['m'], budget, fetchImpl: asFetch(g), retry: fast }, {})).rejects.toBeInstanceOf(RateLimitError);
++    expect(g).not.toHaveBeenCalled();
+   });
+ });
+ 
+-describe('transcribeRobust', () => {
+-  const fast = { sleep: async () => {}, random: () => 0, log: () => {} };
+-  it('refuse une transcription coupée (MAX_TOKENS)', async () => {
+-    const f = vi.fn(async () => ok('# début…', 'MAX_TOKENS'));
+-    await expect(transcribeRobust({ cfg: { key: 'K', models: ['m'], fetchImpl: f as unknown as typeof fetch, retry: fast }, lot })).rejects.toBeInstanceOf(TruncatedError);
++describe('transcription, bascule et messages', () => {
++  it('une réponse coupée est refusée, une réponse complète est renvoyée', async () => {
++    const cfg = (f: unknown) => ({ key: 'K', models: ['m'], fetchImpl: asFetch(f), retry: fast });
++    await expect(transcribeRobust({ cfg: cfg(async () => ok('# début', 'MAX_TOKENS')), lot })).rejects.toBeInstanceOf(TruncatedError);
++    expect(await transcribeRobust({ cfg: cfg(async () => ok('# Cours')), lot })).toBe('# Cours');
+   });
+-  it('renvoie le texte quand tout va bien', async () => {
+-    const f = vi.fn(async () => ok('# Cours'));
+-    expect(await transcribeRobust({ cfg: { key: 'K', models: ['m'], fetchImpl: f as unknown as typeof fetch, retry: fast }, lot })).toBe('# Cours');
+-  });
+-});
+-
+-describe('messageFor', () => {
+-  it('distingue surcharge, coupure et contenu refusé', () => {
++  it('modelsOf (bascule) et messages d\'erreur distincts', () => {
++    expect(modelsOf({ model: 'a', modelSecours: ' b ' })).toEqual(['a', 'b']);
++    expect(modelsOf({ model: 'a', modelSecours: 'b', modeleActif: 'secours' })).toEqual(['b', 'a']);
++    expect(modelsOf({ model: 'a', modelSecours: '', modeleActif: 'secours' })).toEqual(['a']);
+     expect(messageFor(new ServerBusyError(529))).toContain('surchargé (529)');
+     expect(messageFor(new TruncatedError())).toContain('Réduis le nombre de pages');
+     expect(messageFor(new BlockedError('SAFETY'))).toContain('SAFETY');
+-    expect(messageFor(new NetworkError())).toBe("Gemini n'a pas répondu. Réessayer");
+   });
+ });
+diff --git a/tests/jobs.test.ts b/tests/jobs.test.ts
+new file mode 100644
+index 0000000..f9bbabb
+--- /dev/null
++++ b/tests/jobs.test.ts
+@@ -0,0 +1,39 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { dismissJob, finishJob, getJob, isActive, isRunning, resetJobs, startJob, subscribeJobs, updateJob } from '../src/lib/jobs/store';
++
++beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(1_000_000); resetJobs(); });
++afterEach(() => { vi.useRealTimers(); resetJobs(); });
++
++describe('store des tâches', () => {
++  it('démarrage, « depuis » qui repart quand le message ou l\'étape change, abonnés prévenus', () => {
++    const f = vi.fn();
++    const off = subscribeJobs(f);
++    updateJob('generate', { step: 3 }); // tâche inexistante : rien
++    expect(f).not.toHaveBeenCalled();
++    startJob('generate', { title: 'Rolle', steps: 4, message: 'a' });
++    expect(getJob('generate')).toMatchObject({ state: 'running', step: 0, steps: 4, title: 'Rolle' });
++    vi.setSystemTime(1_005_000);
++    updateJob('generate', { message: 'a' });
++    expect(getJob('generate')?.since).toBe(1_000_000);
++    updateJob('generate', { message: 'b' });
++    expect(getJob('generate')?.since).toBe(1_005_000);
++    vi.setSystemTime(1_007_000);
++    updateJob('generate', { step: 2 });
++    expect(getJob('generate')).toMatchObject({ since: 1_007_000, startedAt: 1_000_000 });
++    expect(f).toHaveBeenCalledTimes(4);
++    off();
++    expect(isRunning('generate') && !isRunning('cours')).toBe(true);
++  });
++  it('attente de reprise, fin avec verdict et problèmes, fermeture', () => {
++    startJob('cours', { title: 't', steps: 2, message: 'm' });
++    updateJob('cours', { state: 'waiting', resumeAt: 5 });
++    expect([isActive('cours'), isRunning('cours'), getJob('cours')?.resumeAt]).toEqual([true, false, 5]);
++    updateJob('cours', { state: 'running' });
++    expect(getJob('cours')?.resumeAt).toBeUndefined();
++    finishJob('cours', { state: 'done', outcome: 'warn', message: 'fini', problems: [{ code: 'json', message: 'x' }] });
++    expect(getJob('cours')).toMatchObject({ state: 'done', outcome: 'warn', message: 'fini', problems: [{ code: 'json', message: 'x' }] });
++    expect(isActive('cours')).toBe(false);
++    dismissJob('cours');
++    expect(getJob('cours')?.dismissed).toBe(true);
++  });
++});
+diff --git a/tests/palette.test.ts b/tests/palette.test.ts
+new file mode 100644
+index 0000000..e937aa3
+--- /dev/null
++++ b/tests/palette.test.ts
+@@ -0,0 +1,29 @@
++import { describe, expect, it } from 'vitest';
++import { DEFAULT_PALETTE, PRESETS, applyPalette, normalizeHex, paletteWarnings, resolvePalette } from '../src/lib/render/palette';
++import { renderFiche } from '../src/lib/render/renderFiche';
++import type { Fiche } from '../src/lib/types';
++
++const fiche: Fiche = { schema_version: '1.1', meta: { titre: 'T', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', statut: 'verifie' }, pages: [{ blocks: [] }] };
++
++describe('couleurs des fiches', () => {
++  it('hexadécimal normalisé, palette résolue avec repli sur la charte, alerte de contraste', () => {
++    expect(normalizeHex('abc')).toBe('#AABBCC');
++    expect(normalizeHex(' #0a66c2 ')).toBe('#0A66C2');
++    expect(normalizeHex('rouge')).toBeNull();
++    expect(resolvePalette(undefined)).toEqual(DEFAULT_PALETTE);
++    expect(resolvePalette({ preset: 'ocean' })).toEqual(PRESETS[1].palette);
++    expect(resolvePalette({ preset: 'perso', custom: { titre: '#123', sousTitre: 'nul', logo: '#ABCDEF' } })).toEqual({ titre: '#112233', sousTitre: DEFAULT_PALETTE.sousTitre, logo: '#ABCDEF' });
++    expect(PRESETS.every((p) => paletteWarnings(p.palette).length === 0)).toBe(true);
++    expect(paletteWarnings({ titre: '#FFFF99', sousTitre: '#000000', logo: '#FFFFFF' })).toHaveLength(1);
++  });
++  it('la fiche rendue porte les couleurs choisies (aperçu, impression et export héritent de la racine)', () => {
++    const root = document.createElement('div');
++    renderFiche(root, fiche, PRESETS[1].palette);
++    expect(root.style.getPropertyValue('--f-rouge')).toBe('#0A66C2');
++    expect(root.style.getPropertyValue('--f-rouge-fonce')).toBe('#084A8F');
++    renderFiche(root, fiche);
++    expect(root.style.getPropertyValue('--f-rouge')).toBe(DEFAULT_PALETTE.titre);
++    applyPalette(root, PRESETS[2].palette);
++    expect(root.style.getPropertyValue('--f-rose')).toBe('#7DB896');
++  });
++});
+diff --git a/tests/pdfbuild.test.ts b/tests/pdfbuild.test.ts
+index 5bc654e..a5b281d 100644
+--- a/tests/pdfbuild.test.ts
++++ b/tests/pdfbuild.test.ts
+@@ -2,37 +2,24 @@ import { PDFDocument } from 'pdf-lib';
+ import { describe, expect, it } from 'vitest';
+ import { buildPdfFromPngs, isBlankPixels, pageSizePt, verifyPdf } from '../src/lib/export/pdfBuild';
+ 
+-// PNG 1×1 pixel
+ const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+-const rgba = (n: number, f: (i: number) => [number, number, number]) => Uint8ClampedArray.from({ length: n * 4 }, (_, k) => { const [r, g, b] = f(Math.floor(k / 4)); return [r, g, b, 255][k % 4]; });
++const rgba = (n: number, f: (i: number) => [number, number, number]) => Uint8ClampedArray.from({ length: n * 4 }, (_, k) => [...f(Math.floor(k / 4)), 255][k % 4]);
+ 
+-describe('isBlankPixels', () => {
+-  it('une page blanche est vide', () => expect(isBlankPixels(rgba(1000, () => [255, 255, 255]))).toBe(true));
+-  it('une page presque blanche avec 2 % de pixels sombres ne l\'est pas', () => {
++describe('export PDF vérifié', () => {
++  it('page vide : blanche ou vide = vide ; 2 % de pixels sombres = pas vide', () => {
++    expect(isBlankPixels(rgba(1000, () => [255, 255, 255]))).toBe(true);
++    expect(isBlankPixels([])).toBe(true);
+     expect(isBlankPixels(rgba(1000, (i) => (i % 50 === 0 ? [0, 0, 0] : [255, 255, 255])))).toBe(false);
+   });
+-  it('un tableau vide est vide', () => expect(isBlankPixels([])).toBe(true));
+-});
+-
+-describe('buildPdfFromPngs et verifyPdf', () => {
+-  it('fabrique un PDF de 3 pages A4 et le relit', async () => {
++  it('fabrique un PDF A4 de 3 pages et le relit', async () => {
+     const bytes = await buildPdfFromPngs([PNG, PNG, PNG], 'fiche');
+     const doc = await PDFDocument.load(bytes);
+     expect(doc.getPageCount()).toBe(3);
+-    expect(doc.getPage(0).getSize()).toEqual({ width: pageSizePt('fiche').width, height: pageSizePt('fiche').height });
+-    const r = await verifyPdf(bytes, 3);
+-    expect(r.pages).toBe(3);
+-    expect(r.problems.filter((p) => !p.includes('petit'))).toEqual([]);
+-  });
+-  it('signale un nombre de pages inattendu', async () => {
+-    const r = await verifyPdf(await buildPdfFromPngs([PNG], 'post'), 2);
+-    expect(r.ok).toBe(false);
+-    expect(r.problems.join(' ')).toContain('1 page au lieu de 2');
++    expect(doc.getPage(0).getSize()).toEqual(pageSizePt('fiche'));
++    expect((await verifyPdf(bytes, 3)).pages).toBe(3);
+   });
+-  it('signale un fichier qui n\'est pas un PDF', async () => {
+-    const r = await verifyPdf(new Uint8Array([1, 2, 3, 4, 5, 6]), 1);
+-    expect(r.ok).toBe(false);
+-    expect(r.problems).toContain('En-tête PDF absent');
+-    expect(r.problems).toContain('Le PDF ne se relit pas');
++  it('signale un mauvais nombre de pages et un fichier qui n\'est pas un PDF', async () => {
++    expect((await verifyPdf(await buildPdfFromPngs([PNG], 'post'), 2)).problems.join(' ')).toContain('1 page au lieu de 2');
++    expect((await verifyPdf(new Uint8Array([1, 2, 3, 4, 5, 6]), 1)).problems).toEqual(expect.arrayContaining(['En-tête PDF absent', 'Le PDF ne se relit pas']));
+   });
+ });
+diff --git a/tests/queue2.test.ts b/tests/queue2.test.ts
+index 8a9ef01..256eacb 100644
+--- a/tests/queue2.test.ts
++++ b/tests/queue2.test.ts
+@@ -10,54 +10,32 @@ import { openDb } from '../src/lib/storage/db';
+ const lot = (i: number): Lot => ({ index: i, fromPage: i * 2 + 1, toPage: i * 2 + 2, data: new Uint8Array([i, 1, 2]), mime: 'image/png' });
+ const pages = (l: Lot) => Array.from({ length: l.toPage - l.fromPage + 1 }, (_, k) => `<!-- page ${l.fromPage + k} -->\nTexte suffisamment long.`).join('\n\n');
+ const verify = (l: Lot, md: string) => verifyLot(l, md, { extractText: async () => null });
++const states = async (q: ImportQueue) => (await q.lotInfos('c')).map((i) => i.state);
+ 
+-describe('ImportQueue : contrôle de chaque lot', () => {
+-  it('marque suspect le lot dont il manque une page, et garde les autres vérifiés', async () => {
+-    const q = new ImportQueue(await openDb(), async (l) => (l.index === 1 ? `<!-- page 3 -->\nTexte suffisamment long.` : pages(l)), verify);
++describe('ImportQueue', () => {
++  it('un lot incomplet est marqué suspect, puis repasse à ok quand on le relance', async () => {
++    let bon = false;
++    const q = new ImportQueue(await openDb(), async (l) => (l.index === 1 && !bon ? '<!-- page 3 -->\nTexte suffisamment long.' : pages(l)), verify);
+     await q.enqueue('c', [lot(0), lot(1), lot(2)]);
+     expect(await q.run('c')).toBe('done');
+-    const infos = await q.lotInfos('c');
+-    expect(infos.map((i) => i.state)).toEqual(['ok', 'suspect', 'ok']);
+-    expect(infos[1].missing).toEqual([4]);
+-  });
+-  it('un lot relancé repasse à ok quand la nouvelle transcription est complète', async () => {
+-    let bon = false;
+-    const q = new ImportQueue(await openDb(), async (l) => (l.index === 0 && !bon ? `<!-- page 1 -->\nTexte suffisamment long.` : pages(l)), verify);
+-    await q.enqueue('c', [lot(0), lot(1)]);
+-    await q.run('c');
+-    expect((await q.lotInfos('c'))[0].state).toBe('suspect');
++    expect(await states(q)).toEqual(['ok', 'suspect', 'ok']);
+     bon = true;
+-    expect((await q.rerun('c', 0)).state).toBe('ok');
+-    expect((await q.lotInfos('c')).map((i) => i.state)).toEqual(['ok', 'ok']);
+-  });
+-  it('les lots pas encore traités sont en attente ; la pause garde ce qui est fait', async () => {
+-    const q = new ImportQueue(await openDb(), async (l) => { if (l.index === 1) throw new ServerBusyError(529); return pages(l); }, verify);
+-    await q.enqueue('c', [lot(0), lot(1), lot(2)]);
+-    expect(await q.run('c')).toBe('paused');
+-    expect((await q.lotInfos('c')).map((i) => i.state)).toEqual(['ok', 'pending', 'pending']);
+-  });
+-  it('un quota fait aussi une pause', async () => {
+-    const q = new ImportQueue(await openDb(), async () => { throw new RateLimitError(10); }, verify);
+-    await q.enqueue('c', [lot(0)]);
+-    expect(await q.run('c')).toBe('paused');
++    expect((await q.rerun('c', 1)).state).toBe('ok');
++    await expect(q.rerun('c', 9)).rejects.toThrow('pas encore traité');
+   });
+-  it("rerun refuse un lot qui n'a pas encore été traité", async () => {
+-    const q = new ImportQueue(await openDb(), async (l) => pages(l), verify);
+-    await q.enqueue('c', [lot(0)]);
+-    await expect(q.rerun('c', 0)).rejects.toThrow('pas encore traité');
++  it('réseau ou quota : pause, ce qui est fait est gardé, les autres lots restent en attente', async () => {
++    for (const err of [new ServerBusyError(529), new RateLimitError(10)]) {
++      const q = new ImportQueue(await openDb(), async (l) => { if (l.index === 1) throw err; return pages(l); }, verify);
++      await q.enqueue('c', [lot(0), lot(1), lot(2)]);
++      expect(await q.run('c')).toBe('paused');
++      expect(await states(q)).toEqual(['ok', 'pending', 'pending']);
++    }
+   });
+-  it('sans fonction de contrôle, le comportement historique est conservé', async () => {
+-    const q = new ImportQueue(await openDb(), async (l) => `# lot ${l.index}`);
+-    await q.enqueue('c', [lot(0), lot(1)]);
+-    expect(await q.run('c')).toBe('done');
+-    expect(await q.markdown('c')).toBe('# lot 0\n\n# lot 1');
+-  });
+-});
+-
+-describe('ImportQueue : réponse tronquée', () => {
+-  it('retranscrit le lot page par page et le signale', async () => {
+-    const b = await (async () => { const d = await PDFDocument.create(); for (let i = 0; i < 3; i++) d.addPage([200, 200]); const u = await d.save(); return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer; })();
+-    const [big] = await splitPdf(b, 3);
++  it('réponse tronquée : le lot est retranscrit page par page', async () => {
++    const d = await PDFDocument.create();
++    for (let i = 0; i < 3; i++) d.addPage([200, 200]);
++    const u = await d.save();
++    const [big] = await splitPdf(u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer, 3);
+     const appels: [number, number][] = [];
+     const q = new ImportQueue(await openDb(), async (l) => {
+       appels.push([l.fromPage, l.toPage]);
+@@ -67,26 +45,26 @@ describe('ImportQueue : réponse tronquée', () => {
+     await q.enqueue('c', [big]);
+     expect(await q.run('c')).toBe('done');
+     expect(appels).toEqual([[1, 3], [1, 1], [2, 2], [3, 3]]);
+-    const [info] = await q.lotInfos('c');
+-    expect(info.state).toBe('ok');
+-    expect(info.split).toBe(true);
+-    expect(await q.markdown('c')).toContain('<!-- page 3 -->');
++    expect((await q.lotInfos('c'))[0]).toMatchObject({ state: 'ok', split: true });
+   });
+-  it('une seule page tronquée : lot en échec, avec un repère visible dans le texte', async () => {
+-    const q = new ImportQueue(await openDb(), async () => { throw new TruncatedError(); }, verify);
+-    await q.enqueue('c', [{ index: 0, fromPage: 1, toPage: 1, data: new Uint8Array([1]), mime: 'image/png' }]);
++  it('une page tronquée ou refusée : échec visible dans le texte, sans bloquer les lots suivants', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => {
++      if (l.index === 0) throw new TruncatedError();
++      if (l.index === 1) throw new BlockedError('SAFETY');
++      return pages(l);
++    }, verify);
++    await q.enqueue('c', [{ ...lot(0), toPage: 1 }, lot(1), lot(2)]);
+     expect(await q.run('c')).toBe('done');
+-    expect((await q.lotInfos('c'))[0].state).toBe('failed');
+-    const md = await q.markdown('c');
+-    expect(md).toContain('[lot non transcrit');
+-    expect(checkMarkdown(`# T\n${md}`).some((p) => p.message.includes('non transcrit'))).toBe(true);
++    expect(await states(q)).toEqual(['failed', 'failed', 'ok']);
++    expect((await q.lotInfos('c'))[1].notes?.join(' ')).toContain('SAFETY');
++    expect(checkMarkdown(`# T\n${await q.markdown('c')}`).some((p) => p.message.includes('non transcrit'))).toBe(true);
+   });
+-  it('contenu refusé : lot en échec avec le motif, sans bloquer les suivants', async () => {
+-    const q = new ImportQueue(await openDb(), async (l) => { if (l.index === 0) throw new BlockedError('SAFETY'); return pages(l); }, verify);
++  it('événements de progression start/done, et comportement historique sans contrôle', async () => {
++    const q = new ImportQueue(await openDb(), async (l) => `# lot ${l.index}`);
+     await q.enqueue('c', [lot(0), lot(1)]);
+-    expect(await q.run('c')).toBe('done');
+-    const infos = await q.lotInfos('c');
+-    expect(infos.map((i) => i.state)).toEqual(['failed', 'ok']);
+-    expect(infos[0].notes?.join(' ')).toContain('SAFETY');
++    const ev: string[] = [];
++    await q.run('c', (p) => ev.push(`${p.phase}${p.index + 1}/${p.total}`));
++    expect(ev).toEqual(['start1/2', 'done1/2', 'start2/2', 'done2/2']);
++    expect(await q.markdown('c')).toBe('# lot 0\n\n# lot 1');
+   });
+ });
+diff --git a/tests/refs.test.ts b/tests/refs.test.ts
+new file mode 100644
+index 0000000..c4ddb13
+--- /dev/null
++++ b/tests/refs.test.ts
+@@ -0,0 +1,63 @@
++import { describe, expect, it } from 'vitest';
++import { buildPrompt } from '../src/lib/generate/context';
++import { EMPTY_REFS, blockLabel, countBlocks, loadRefs, mergeRef, refFromFiche, refFromJson, refsToPrompt, removeBlock, removeRef, saveRefs } from '../src/lib/generate/refs';
++import { openDb } from '../src/lib/storage/db';
++import type { Brief, Fiche } from '../src/lib/types';
++
++const fiche: Fiche = {
++  schema_version: '1.1',
++  meta: { titre: 'Continuité', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', statut: 'verifie' },
++  pages: [
++    { titre_page: 'Bases', blocks: [{ type: 'definition', terme: 'Continuité', enonce: 'f est continue en a si…' }, { type: 'theoreme', nom: 'TVI', enonce: 'Soit f…' }] },
++    { blocks: [{ type: 'formule', latex: '\\int_a^b f' }, { type: 'qcm', question: 'Quelle proposition ?', choix: [], reponse: 0, explication: '' }] },
++  ],
++};
++const brief: Brief = { id: 'b', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', sujet: 'TVI' };
++
++describe('références de la bibliothèque', () => {
++  it('libellés lisibles ; toute la fiche ou seulement les blocs choisis', () => {
++    expect(blockLabel(fiche.pages[0].blocks[0])).toBe('Définition : Continuité');
++    expect(blockLabel(fiche.pages[1].blocks[0])).toBe('Formule : \\int_a^b f');
++    expect(blockLabel({ type: 'piege', texte: 'x'.repeat(200) }).length).toBeLessThan(80);
++    expect(refFromFiche(fiche, 'p').blocks.map((b) => [b.page, b.index])).toEqual([[0, 0], [0, 1], [1, 0], [1, 1]]);
++    expect(refFromFiche(fiche, 'p', (page, i) => page === 1 && i === 0).blocks).toHaveLength(1);
++  });
++  it('JSON collé : fiche, liste de blocs, bloc seul ; refus du reste', () => {
++    expect(refFromJson(JSON.stringify(fiche)).blocks).toHaveLength(4);
++    expect(refFromJson(JSON.stringify(fiche.pages[0].blocks), 'mes blocs')).toMatchObject({ titre: 'mes blocs' });
++    expect(refFromJson('{"type":"piege","texte":"a"}').blocks).toHaveLength(1);
++    expect(() => refFromJson('pas du json')).toThrow('pas du JSON valide');
++    expect(() => refFromJson('[1,2]')).toThrow('Aucun bloc reconnu');
++    const t = JSON.stringify(fiche.pages[0].blocks);
++    expect(refFromJson(t).id).toBe(refFromJson(t).id);
++  });
++  it('fusion sans doublon, retrait d\'un bloc, d\'une fiche', () => {
++    const a = refFromFiche(fiche, 'f', (p, i) => p === 0 && i === 0);
++    let set = mergeRef(mergeRef(EMPTY_REFS, a), refFromFiche(fiche, 'f', (p) => p === 0));
++    expect([set.items.length, countBlocks(set)]).toEqual([1, 2]);
++    expect(mergeRef(set, refFromFiche(fiche, 'autre')).items).toHaveLength(2);
++    set = removeBlock(removeBlock(set, 'f', 0, 0), 'f', 0, 1);
++    expect(set.items).toHaveLength(0);
++    expect(removeRef(mergeRef(EMPTY_REFS, a), 'f').items).toEqual([]);
++  });
++  it('dans la requête : consigne selon le mode, limite de taille, avant les extraits de cours', () => {
++    const set = mergeRef(EMPTY_REFS, refFromFiche(fiche, 'f'));
++    expect(refsToPrompt(EMPTY_REFS)).toBe('');
++    expect(refsToPrompt(set)).toContain('inspire-toi');
++    expect(refsToPrompt({ ...set, mode: 'reprendre' })).toContain('BLOCS À REPRENDRE');
++    expect(refsToPrompt(set, 120)).toMatch(/\(\d+ blocs? omis/);
++    const base = { charte: 'C', schema: {}, examples: [], sections: [], brief };
++    const avec = buildPrompt({ ...base, refs: set }).user;
++    expect(avec.indexOf('RÉFÉRENCES')).toBeGreaterThan(avec.indexOf('EXEMPLES DE FICHES'));
++    expect(avec.indexOf('RÉFÉRENCES')).toBeLessThan(avec.indexOf('EXTRAITS DE COURS'));
++    expect(buildPrompt(base).user).not.toContain('RÉFÉRENCES');
++  });
++  it('persistance : relit ce qui est enregistré, repart de zéro sur une valeur invalide', async () => {
++    const db = await openDb();
++    const set = mergeRef({ items: [], mode: 'reprendre' }, refFromFiche(fiche, 'f'));
++    await saveRefs(db, set);
++    expect(await loadRefs(db)).toEqual(set);
++    await db.put('generate-refs', 'n’importe quoi');
++    expect(await loadRefs(db)).toEqual(EMPTY_REFS);
++  });
++});
+diff --git a/tests/retry.test.ts b/tests/retry.test.ts
+index 47ac830..bfdbee1 100644
+--- a/tests/retry.test.ts
++++ b/tests/retry.test.ts
+@@ -2,62 +2,43 @@ import { describe, expect, it } from 'vitest';
+ import { withRetry } from '../src/lib/gemini/retry';
+ import { AuthError, NetworkError, RateLimitError, ServerBusyError } from '../src/lib/errors';
+ 
+-function setup(models: string[], extra: Record<string, unknown> = {}) {
++function setup(models: string[]) {
+   const sleeps: number[] = [];
+   const events: string[] = [];
+-  const o = { models, sleep: async (ms: number) => { sleeps.push(ms); }, random: () => 0, log: () => {}, onEvent: (e: { message: string }) => events.push(e.message), ...extra };
+-  return { sleeps, events, o };
++  return { sleeps, events, o: { models, sleep: async (ms: number) => { sleeps.push(ms); }, random: () => 0, log: () => {}, onEvent: (e: { message: string }) => events.push(e.message) } };
+ }
+ 
+ describe('withRetry', () => {
+-  it('529 deux fois puis succès : attentes de 1 s puis 2 s', async () => {
+-    const { sleeps, o } = setup(['a']);
+-    let n = 0;
+-    const r = await withRetry(async () => { if (++n < 3) throw new ServerBusyError(529); return 'ok'; }, o);
+-    expect(r).toBe('ok');
+-    expect(n).toBe(3);
+-    expect(sleeps).toEqual([1000, 2000]);
+-  });
+-  it('quatre échecs sur le principal : bascule sur le modèle de secours', async () => {
+-    const { sleeps, events, o } = setup(['a', 'b']);
++  it('529 : attentes de 1, 2, 4 s, puis bascule sur le secours', async () => {
++    let t = setup(['a']), n = 0;
++    expect(await withRetry(async () => { if (++n < 3) throw new ServerBusyError(529); return 'ok'; }, t.o)).toBe('ok');
++    expect(t.sleeps).toEqual([1000, 2000]);
++    t = setup(['a', 'b']);
+     const calls: string[] = [];
+-    const r = await withRetry(async (m) => { calls.push(m); if (m === 'a') throw new ServerBusyError(529); return 'via-' + m; }, o);
+-    expect(r).toBe('via-b');
++    expect(await withRetry(async (m) => { calls.push(m); if (m === 'a') throw new ServerBusyError(529); return m; }, t.o)).toBe('b');
+     expect(calls).toEqual(['a', 'a', 'a', 'a', 'b']);
+-    expect(sleeps).toEqual([1000, 2000, 4000]);
+-    expect(events.some((m) => m.includes('bascule sur b'))).toBe(true);
+-  });
+-  it("si tout échoue, relance l'erreur du modèle principal, pas celle du secours", async () => {
+-    const { o } = setup(['a', 'b']);
+-    await expect(withRetry(async (m) => { throw new ServerBusyError(m === 'a' ? 529 : 503); }, o)).rejects.toMatchObject({ status: 529 });
+-  });
+-  it('un modèle de secours inexistant (404) ne masque pas la surcharge du principal', async () => {
+-    const { o } = setup(['a', 'b']);
+-    await expect(withRetry(async (m) => { throw m === 'a' ? new ServerBusyError(529) : new NetworkError('Gemini a répondu 404'); }, o)).rejects.toMatchObject({ status: 529 });
+-  });
+-  it('clé refusée : arrêt immédiat, sans secours', async () => {
+-    const { o } = setup(['a', 'b']);
+-    let n = 0;
+-    await expect(withRetry(async () => { n++; throw new AuthError(); }, o)).rejects.toBeInstanceOf(AuthError);
+-    expect(n).toBe(1);
+-  });
+-  it('quota court : attend le délai indiqué puis réessaie', async () => {
+-    const { sleeps, o } = setup(['a']);
+-    let n = 0;
+-    expect(await withRetry(async () => { if (++n === 1) throw new RateLimitError(5); return 'ok'; }, o)).toBe('ok');
+-    expect(sleeps).toEqual([5000]);
+-  });
+-  it('quota long de Gemini : passe au modèle suivant (le quota est par modèle)', async () => {
+-    const { sleeps, o } = setup(['a', 'b']);
+-    const r = await withRetry(async (m) => { if (m === 'a') throw new RateLimitError(60); return 'ok-' + m; }, o);
+-    expect(r).toBe('ok-b');
+-    expect(sleeps).toEqual([]);
++    expect(t.sleeps).toEqual([1000, 2000, 4000]);
++    expect(t.events.some((m) => m.includes('bascule sur b'))).toBe(true);
+   });
+-  it('plafond local long : arrêt immédiat, le secours ne servirait à rien', async () => {
++  it("si tout échoue, relance l'erreur du principal, même quand le secours échoue autrement", async () => {
+     const { o } = setup(['a', 'b']);
+-    const calls: string[] = [];
+-    await expect(withRetry(async (m) => { calls.push(m); throw new RateLimitError(60, true); }, o)).rejects.toMatchObject({ local: true });
+-    expect(calls).toEqual(['a']);
++    await expect(withRetry(async (m) => { throw m === 'a' ? new ServerBusyError(529) : new NetworkError('404'); }, o)).rejects.toMatchObject({ status: 529 });
++  });
++  it('clé refusée, erreur inconnue, plafond local long : arrêt immédiat, sans secours', async () => {
++    for (const err of [new AuthError(), new Error('boum'), new RateLimitError(60, true)]) {
++      const { o } = setup(['a', 'b']);
++      let n = 0;
++      await expect(withRetry(async () => { n++; throw err; }, o)).rejects.toBe(err);
++      expect(n).toBe(1);
++    }
++  });
++  it('quota court : on attend ; quota long de Gemini : modèle suivant', async () => {
++    let t = setup(['a']), n = 0;
++    expect(await withRetry(async () => { if (++n === 1) throw new RateLimitError(5); return 'ok'; }, t.o)).toBe('ok');
++    expect(t.sleeps).toEqual([5000]);
++    t = setup(['a', 'b']);
++    expect(await withRetry(async (m) => { if (m === 'a') throw new RateLimitError(60); return m; }, t.o)).toBe('b');
++    expect(t.sleeps).toEqual([]);
+   });
+   it('réseau coupé : un seul nouvel essai, puis erreur', async () => {
+     const { o } = setup(['a', 'b']);
+@@ -65,13 +46,4 @@ describe('withRetry', () => {
+     await expect(withRetry(async () => { n++; throw new NetworkError(); }, o)).rejects.toBeInstanceOf(NetworkError);
+     expect(n).toBe(2);
+   });
+-  it('erreur inconnue : relancée telle quelle, sans reprise', async () => {
+-    const { o } = setup(['a']);
+-    let n = 0;
+-    await expect(withRetry(async () => { n++; throw new Error('boum'); }, o)).rejects.toThrow('boum');
+-    expect(n).toBe(1);
+-  });
+-  it('sans modèle : erreur explicite', async () => {
+-    await expect(withRetry(async () => 1, { models: [] })).rejects.toThrow('Aucun modèle');
+-  });
+ });
+diff --git a/tests/runners.test.ts b/tests/runners.test.ts
+new file mode 100644
+index 0000000..6d10d71
+--- /dev/null
++++ b/tests/runners.test.ts
+@@ -0,0 +1,105 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { ImportQueue } from '../src/lib/cours/queue';
++import { EMPTY_REFS, refFromFiche, mergeRef } from '../src/lib/generate/refs';
++import { getJob, resetJobs, startJob, subscribeJobs } from '../src/lib/jobs/store';
++import { NotFoundError } from '../src/lib/errors';
++import { openDb, type Db } from '../src/lib/storage/db';
++import { saveSettings } from '../src/lib/storage/settings';
++import type { Fiche } from '../src/lib/types';
++import { runGenerate } from '../src/ui/runGenerate';
++import { cancelAuto, resumeNow, startCoursRun } from '../src/ui/runCours';
++
++const reply = (text: string) => new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text }] } }] }), { status: 200 });
++/** Réponse de transcription cohérente avec le lot demandé : un repère par page. */
++const transcription = (init?: RequestInit) => {
++  const t = String(init?.body ?? '');
++  const m = /pages de (\d+) à (\d+)/.exec(t);
++  const [a, b] = m ? [Number(m[1]), Number(m[2])] : [1, 1];
++  return reply(Array.from({ length: b - a + 1 }, (_, k) => `<!-- page ${a + k} -->\nTexte de cours suffisamment long.`).join('\n\n'));
++};
++const lot = (i: number) => ({ index: i, fromPage: i + 1, toPage: i + 1, data: new Uint8Array([i, 1]), mime: 'image/png' });
++
++let db: Db;
++const seen: string[] = [];
++let off: () => void;
++beforeEach(async () => {
++  localStorage.clear();
++  resetJobs();
++  db = await openDb();
++  saveSettings({ geminiKey: 'K', model: 'principal-m', modelSecours: '', modeleActif: 'principal', maxPerMinute: 100, maxPerDay: 1000 });
++  seen.length = 0;
++  off = subscribeJobs(() => { const j = getJob('cours') ?? getJob('generate'); if (j) seen.push(j.message); });
++});
++afterEach(() => { off(); vi.unstubAllGlobals(); vi.useRealTimers(); cancelAuto(); resetJobs(); });
++
++describe('startCoursRun : la tâche vit hors du composant', () => {
++  const enqueue = async (n = 2) => { await new ImportQueue(db, async () => '').enqueue('imp', Array.from({ length: n }, (_, i) => lot(i))); };
++
++  it('publie la progression lot par lot, utilise le modèle choisi par la bascule, refuse un deuxième lancement', async () => {
++    await enqueue();
++    saveSettings({ modelSecours: 'secours-m', modeleActif: 'secours' });
++    const urls: string[] = [];
++    vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => { urls.push(u); return transcription(init); }));
++    startJob('cours', { title: 'autre', steps: 1, message: 'm' });
++    expect(await startCoursRun(db, 'imp', 'T')).toBe(false); // une tâche tourne déjà
++    resetJobs();
++    expect(await startCoursRun(db, 'imp', 'Optique')).toBe(true);
++    expect(getJob('cours')).toMatchObject({ state: 'done', outcome: 'ok', steps: 2, step: 2, title: 'Optique', ref: 'imp' });
++    expect(urls[0]).toContain('/models/secours-m:');
++    expect(seen).toContain('Lot 1 sur 2 : transcription par Gemini (secours-m)…');
++    expect(seen).toContain('Lot 2 sur 2 transcrit et vérifié');
++  });
++
++  it('réseau coupé : attente avec compte à rebours, annulable ; « Reprendre maintenant » termine', async () => {
++    await enqueue();
++    vi.useFakeTimers();
++    let up = false;
++    vi.stubGlobal('fetch', vi.fn(async (_u: string, init?: RequestInit) => { if (!up) throw new TypeError('Failed to fetch'); return transcription(init); }));
++    const p = startCoursRun(db, 'imp', 'T');
++    await vi.advanceTimersByTimeAsync(1500);
++    await p;
++    expect(getJob('cours')).toMatchObject({ state: 'waiting' });
++    expect(getJob('cours')?.resumeAt).toBeGreaterThan(Date.now());
++    expect(getJob('cours')?.message).toContain('Nouvel essai automatique (1/3)');
++    cancelAuto();
++    expect(getJob('cours')).toMatchObject({ state: 'error', outcome: 'warn' });
++    expect(await new ImportQueue(db, async () => '').progress('imp')).toEqual({ done: 0, total: 2 });
++    const q = startCoursRun(db, 'imp', 'T');
++    await vi.advanceTimersByTimeAsync(1500);
++    await q;
++    up = true;
++    resumeNow();
++    await vi.waitFor(() => expect(getJob('cours')?.state).toBe('done'));
++  });
++});
++
++describe('runGenerate : la génération vit hors du composant', () => {
++  const repo = { listTree: vi.fn(async () => []), readFile: vi.fn(async () => { throw new NotFoundError(); }) } as never;
++  const brief = { id: 'b', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', sujet: 'TVI' };
++  const fiche: Fiche = { schema_version: '1.1', meta: { titre: 'Source', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', statut: 'verifie' }, pages: [{ blocks: [{ type: 'theoreme', nom: 'Rolle', enonce: 'Soit f…' }] }] };
++
++  it('4 tours sans JSON valide : brouillon gardé, verdict « warn », phases publiées, références envoyées à Gemini', async () => {
++    const bodies: string[] = [];
++    vi.stubGlobal('fetch', vi.fn(async (_u: string, init?: RequestInit) => { bodies.push(String(init?.body)); return reply('ceci n’est pas du JSON'); }));
++    const refs = mergeRef({ ...EMPTY_REFS, mode: 'reprendre' }, refFromFiche(fiche, 'corpus/json/maths/s.json'));
++    expect(await runGenerate({ repo, db, brief, refs })).toBe(true);
++    expect(getJob('generate')).toMatchObject({ state: 'done', outcome: 'warn', step: 4, steps: 4, ref: 'b' });
++    expect(getJob('generate')?.problems?.[0].code).toBe('json');
++    expect(bodies).toHaveLength(4);
++    expect(bodies[0]).toContain('BLOCS À REPRENDRE');
++    expect(bodies[0]).toContain('Rolle');
++    expect(seen).toContain('Tour 1 sur 4 : envoi à Gemini (principal-m)…');
++    expect(seen).toContain('Tour 4 sur 4 : réponse reçue, lecture du JSON…');
++    expect((await db.getDraft('b'))?.problems.length).toBeGreaterThan(0);
++  });
++
++  it('dépôt illisible : erreur sans appel à Gemini ; une génération déjà en cours bloque la suivante', async () => {
++    const f = vi.fn();
++    vi.stubGlobal('fetch', f);
++    await runGenerate({ repo: { listTree: vi.fn(async () => { throw new TypeError('x'); }), readFile: vi.fn() } as never, db, brief });
++    expect(getJob('generate')).toMatchObject({ state: 'error', outcome: 'error' });
++    expect(f).not.toHaveBeenCalled();
++    startJob('generate', { title: 'autre', steps: 4, message: 'm' });
++    expect(await runGenerate({ repo, db, brief })).toBe(false);
++  });
++});
+diff --git a/tests/ui-smoke.test.tsx b/tests/ui-smoke.test.tsx
+new file mode 100644
+index 0000000..866c774
+--- /dev/null
++++ b/tests/ui-smoke.test.tsx
+@@ -0,0 +1,111 @@
++import { act } from 'react';
++import { createRoot, type Root } from 'react-dom/client';
++import { renderToStaticMarkup } from 'react-dom/server';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { EMPTY_REFS, mergeRef, refFromFiche, type RefSet } from '../src/lib/generate/refs';
++import { finishJob, resetJobs, startJob, updateJob } from '../src/lib/jobs/store';
++import { getSettings, saveSettings } from '../src/lib/storage/settings';
++import { openDb } from '../src/lib/storage/db';
++import type { Fiche } from '../src/lib/types';
++import BlockPicker from '../src/ui/BlockPicker';
++import Generate from '../src/ui/Generate';
++import JobBar from '../src/ui/JobBar';
++import Settings from '../src/ui/Settings';
++
++(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
++const fiche: Fiche = { schema_version: '1.1', meta: { titre: 'Continuité', matiere: 'maths', niveau: 'mpsi', chapitre: 'C', statut: 'verifie' },
++  pages: [{ titre_page: 'Bases', blocks: [{ type: 'definition', terme: 'Continuité', enonce: 'x' }, { type: 'theoreme', nom: 'TVI', enonce: 'y' }] }] };
++
++let host: HTMLDivElement;
++let root: Root;
++beforeEach(() => { localStorage.clear(); resetJobs(); host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host); });
++afterEach(() => { act(() => root.unmount()); host.remove(); resetJobs(); vi.restoreAllMocks(); });
++const text = () => host.textContent ?? '';
++const click = (el: Element | null | undefined) => act(() => { el?.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
++const buttonByText = (t: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(t));
++
++describe('Réglages : bascule de modèle et couleurs des fiches', () => {
++  it('Secours désactivé sans modèle puis bascule ; une palette de fiche se choisit et se réinitialise', () => {
++    act(() => root.render(<Settings />));
++    const radios = () => [...host.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
++    expect(radios()).toHaveLength(2);
++    expect(radios()[1].disabled).toBe(true);
++    saveSettings({ modelSecours: 'lite' });
++    act(() => { window.dispatchEvent(new Event('sequentia-settings-changed')); });
++    expect(radios()[1].disabled).toBe(false);
++    click(radios()[1]);
++    expect(radios()[1].getAttribute('aria-checked')).toBe('true');
++    expect(radios()[0].getAttribute('aria-checked')).toBe('false');
++    click(radios()[0]);
++    expect(radios()[0].getAttribute('aria-checked')).toBe('true');
++    click(buttonByText('Océan'));
++    expect(getSettings().ficheCouleurs.preset).toBe('ocean');
++    click(buttonByText('Personnalisé'));
++    expect(host.querySelectorAll('input[type="color"]').length).toBeGreaterThanOrEqual(3);
++    click(buttonByText('Revenir à la charte'));
++    expect(getSettings().ficheCouleurs.preset).toBe('sequentia');
++  });
++});
++
++describe('Générer : progression conservée et références', () => {
++  const props = async (refs: RefSet = EMPTY_REFS, onRefsChange = vi.fn()) => ({ repo: null, db: await openDb(), onOpenDraft: vi.fn(), refs, onRefsChange, onGoLibrary: vi.fn() });
++
++  it('progression et résultat relus au retour sur l\'onglet ; bandeau visible dans les autres onglets', async () => {
++    startJob('generate', { title: 'TVI', steps: 4, message: 'Tour 2 sur 4 : envoi à Gemini (m)…' });
++    updateJob('generate', { step: 2 });
++    const p = await props();
++    act(() => root.render(<Generate {...p} />));
++    expect(text()).toContain('Tour 2 sur 4 : envoi à Gemini (m)…');
++    expect(buttonByText('Génération en cours…')?.disabled).toBe(true);
++    expect(renderToStaticMarkup(<JobBar entree="Réglages" onGo={() => undefined} />)).toContain('Fiche : TVI');
++    expect(renderToStaticMarkup(<JobBar entree="Générer" onGo={() => undefined} />)).toBe('');
++    act(() => finishJob('generate', { state: 'done', outcome: 'ok', message: 'Brouillon prêt après 2 tours' }));
++    expect(text()).toContain('Brouillon prêt après 2 tours');
++    click(buttonByText('Fermer'));
++    expect(text()).not.toContain('Brouillon prêt après 2 tours');
++  });
++
++  it('affiche les références, permet de retirer un bloc et de changer de mode', async () => {
++    const refs = mergeRef(EMPTY_REFS, refFromFiche(fiche, 'f'));
++    const onRefsChange = vi.fn();
++    const p = await props(refs, onRefsChange);
++    act(() => root.render(<Generate {...p} />));
++    expect(text()).toContain('Références de la bibliothèque');
++    expect(text()).toContain('Continuité');
++    expect(text()).toContain('2 blocs');
++    click(host.querySelector('[aria-label="Retirer Théorème : TVI"]'));
++    expect(onRefsChange).toHaveBeenCalledTimes(1);
++    expect(onRefsChange.mock.calls[0][0].items[0].blocks).toHaveLength(1);
++    const select = host.querySelector<HTMLSelectElement>('select option[value="reprendre"]')!.parentElement as HTMLSelectElement;
++    act(() => { select.value = 'reprendre'; select.dispatchEvent(new Event('change', { bubbles: true })); });
++    expect(onRefsChange.mock.calls.at(-1)?.[0].mode).toBe('reprendre');
++  });
++
++  it('colle du JSON de blocs pour les ajouter aux références', async () => {
++    const onRefsChange = vi.fn();
++    const p = await props(EMPTY_REFS, onRefsChange);
++    act(() => root.render(<Generate {...p} />));
++    const ta = [...host.querySelectorAll('textarea')].find((t) => t.id && host.querySelector(`label[for="${t.id}"]`)?.textContent === 'JSON')!;
++    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
++    act(() => { setter.call(ta, JSON.stringify(fiche.pages[0].blocks)); ta.dispatchEvent(new Event('input', { bubbles: true })); });
++    click(buttonByText('Ajouter aux références'));
++    expect(onRefsChange).toHaveBeenCalledTimes(1);
++    expect(onRefsChange.mock.calls[0][0].items[0].blocks).toHaveLength(2);
++    expect(text()).toContain('2 blocs ajoutés aux références');
++  });
++});
++
++describe('BlockPicker : de la bibliothèque vers Générer', () => {
++  it('envoie seulement les blocs cochés, ou toute la fiche', () => {
++    const onSend = vi.fn();
++    act(() => root.render(<BlockPicker fiche={fiche} path="corpus/json/maths/c.json" onSend={onSend} />));
++    expect(buttonByText('Envoyer la sélection (0)')?.disabled).toBe(true);
++    click(host.querySelectorAll('input[type="checkbox"]')[1]);
++    expect(buttonByText('Envoyer la sélection (1)')?.disabled).toBe(false);
++    click(buttonByText('Envoyer la sélection (1)'));
++    expect(onSend.mock.calls[0][0].blocks.map((b: { block: { nom?: string } }) => b.block.nom)).toEqual(['TVI']);
++    click(buttonByText('Envoyer toute la fiche (2)'));
++    expect(onSend.mock.calls[1][0].blocks).toHaveLength(2);
++    expect(onSend.mock.calls[1][0].path).toBe('corpus/json/maths/c.json');
++  });
++});
+diff --git a/tests/verify.test.ts b/tests/verify.test.ts
+index 957c1ff..edab95c 100644
+--- a/tests/verify.test.ts
++++ b/tests/verify.test.ts
+@@ -2,70 +2,33 @@ import { describe, expect, it } from 'vitest';
+ import { checkPageMarkers, coverage, splitByPage, verifyLot } from '../src/lib/cours/verify';
+ 
+ const lot = { index: 1, fromPage: 6, toPage: 8, data: new Uint8Array([1]) };
+-const md = (...pages: number[]) => pages.map((p) => `<!-- page ${p} -->\nTexte de la page ${p} avec suffisamment de contenu.`).join('\n\n');
+ const texte = 'Théorème fondamental intégrale continue dérivable primitive fonction intervalle borne';
++const md = (pages: number[], body = texte) => pages.map((p) => `<!-- page ${p} -->\n${body}`).join('\n\n');
++const pdf = async () => [texte, texte, texte];
+ 
+-describe('checkPageMarkers', () => {
+-  it('tout est présent', () => expect(checkPageMarkers(md(6, 7, 8), lot)).toEqual({ missing: [], unexpected: [], duplicated: [], ordered: true }));
+-  it('repère manquant, inattendu, répété, désordre', () => {
+-    const r = checkPageMarkers(md(6, 8, 8, 3), lot);
+-    expect(r.missing).toEqual([7]);
+-    expect(r.unexpected).toEqual([3]);
+-    expect(r.duplicated).toEqual([8]);
+-    expect(r.ordered).toBe(false);
++describe('contrôle des lots importés', () => {
++  it('repères de page : manquant, inattendu, répété, désordre', () => {
++    expect(checkPageMarkers(md([6, 7, 8]), lot)).toEqual({ missing: [], unexpected: [], duplicated: [], ordered: true });
++    expect(checkPageMarkers(md([6, 8, 8, 3]), lot)).toMatchObject({ missing: [7], unexpected: [3], duplicated: [8], ordered: false });
+   });
+-});
+-
+-describe('coverage', () => {
+-  it('compte les mots de 5 lettres ou plus, sans accents ni casse', () => {
++  it('couverture : mots de 5 lettres ou plus, sans accents ni casse ; découpe par page', () => {
+     expect(coverage('Intégrale continue primitive', 'integrale CONTINUE').ratio).toBeCloseTo(2 / 3);
+-  });
+-  it('référence sans mots : 1', () => expect(coverage('a b 12', 'x').ratio).toBe(1));
+-});
+-
+-describe('splitByPage', () => {
+-  it('découpe par repère', () => expect([...splitByPage(md(6, 7)).keys()]).toEqual([6, 7]));
+-});
+-
+-describe('verifyLot', () => {
+-  const pdf = async () => [texte, texte, texte];
+-  it('ok : repères présents et texte retrouvé', async () => {
+-    const m = [6, 7, 8].map((p) => `<!-- page ${p} -->\n${texte}`).join('\n\n');
+-    const r = await verifyLot(lot, m, { extractText: pdf });
+-    expect(r.state).toBe('ok');
+-    expect(r.coverage).toBe(1);
+-  });
+-  it('suspect : page manquante', async () => {
+-    const m = [6, 8].map((p) => `<!-- page ${p} -->\n${texte}`).join('\n\n');
+-    const r = await verifyLot(lot, m, { extractText: pdf });
+-    expect(r.state).toBe('suspect');
+-    expect(r.missing).toEqual([7]);
+-  });
+-  it('suspect : transcription très incomplète', async () => {
+-    const m = [6, 7, 8].map((p) => `<!-- page ${p} -->\nTrois mots seulement ici`).join('\n\n');
+-    const r = await verifyLot(lot, m, { extractText: pdf });
+-    expect(r.state).toBe('suspect');
+-    expect(r.coverage).toBeLessThan(0.7);
+-  });
+-  it('suspect : une page vide au milieu de pages complètes', async () => {
+-    const long = Array.from({ length: 20 }, (_, i) => `motnumero${String.fromCharCode(97 + i)}${'x'.repeat(i)}`).join(' ').replace(/\d/g, '');
+-    const m = `<!-- page 6 -->\n${long}\n<!-- page 7 -->\nrien\n<!-- page 8 -->\n${long}`;
+-    const r = await verifyLot(lot, m, { extractText: async () => [long, long, long] });
+-    expect(r.weak).toEqual([7]);
+-    expect(r.state).toBe('suspect');
+-  });
+-  it('PDF sans texte (scan) : seuls les repères sont contrôlés, avec une note', async () => {
+-    const r = await verifyLot(lot, md(6, 7, 8), { extractText: async () => null });
+-    expect(r.state).toBe('ok');
+-    expect(r.coverage).toBeUndefined();
+-    expect(r.notes.join(' ')).toContain('Pas de texte');
+-  });
+-  it('compte les passages [illisible]', async () => {
+-    const r = await verifyLot(lot, md(6, 7, 8) + '\n[illisible] [illisible]', { extractText: async () => null });
+-    expect(r.notes.join(' ')).toContain('2 passages [illisible]');
++    expect(coverage('a b 12', 'x').ratio).toBe(1);
++    expect([...splitByPage(md([6, 7])).keys()]).toEqual([6, 7]);
++  });
++  it('verdict : ok, page manquante, transcription incomplète, scan sans texte', async () => {
++    expect(await verifyLot(lot, md([6, 7, 8]), { extractText: pdf })).toMatchObject({ state: 'ok', coverage: 1 });
++    expect(await verifyLot(lot, md([6, 8]), { extractText: pdf })).toMatchObject({ state: 'suspect', missing: [7] });
++    const peu = await verifyLot(lot, md([6, 7, 8], 'Trois mots seulement ici'), { extractText: pdf });
++    expect(peu.state).toBe('suspect');
++    expect(peu.coverage).toBeLessThan(0.7);
++    const scan = await verifyLot(lot, md([6, 7, 8]) + '\n[illisible] [illisible]', { extractText: async () => null });
++    expect(scan.state).toBe('ok');
++    expect(scan.coverage).toBeUndefined();
++    expect(scan.notes.join(' ')).toMatch(/Pas de texte.*2 passages \[illisible\]/);
+   });
+   it("une extraction qui plante n'empêche pas le contrôle des repères", async () => {
+-    const r = await verifyLot(lot, md(6, 8), { extractText: async () => { throw new Error('pdfjs'); } });
++    const r = await verifyLot(lot, md([6, 8]), { extractText: async () => { throw new Error('pdfjs'); } });
+     expect(r.state).toBe('suspect');
+     expect(r.notes.join(' ')).toContain('Comparaison avec le PDF impossible');
+   });
+-- 
+2.43.0
+
